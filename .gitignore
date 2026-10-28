@@ -1,0 +1,44 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+node_modules/
+web/dist/
+data/
+.env
+.DS_Store
+.bastion/
+
+# Local secrets and credentials
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+id_rsa*
+*.token
+
+# Voice data and generated audio never belong in git
+voices/
+*.wav
+*.mp3
+*.flac
+*.ogg
+.default
+.builtin_hidden
+
+# Model weights and caches
+*.pt
+*.pth
+*.safetensors
+*.ckpt
+*.bin
+.cache/
+huggingface/
+
+# Editor and tooling
+.cursor/
+.claude/
+.vscode/
+.idea/
+*.log

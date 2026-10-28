@@ -1,0 +1,10 @@
+.git
+.bastion
+**/__pycache__
+**/.pytest_cache
+.venv
+web/node_modules
+web/dist
+data
+.env
+api/tests

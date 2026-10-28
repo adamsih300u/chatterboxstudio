@@ -1,0 +1,20 @@
+services:
+  chatterbox-studio:
+    build: .
+    image: chatterbox-studio:dev
+    ports:
+      - "8000:8000"
+    environment:
+      DEFAULT_VARIANT: turbo
+      # Comma-separated variants to load into memory at startup. The UI blocks
+      # Generate for a model until it is ready. Add standard,multilingual if RAM allows.
+      PRELOAD_VARIANTS: turbo
+      # Torch CPU threads. Unset = all cores. 4 is a benchmark candidate on SMT or busy hosts.
+      TORCH_THREADS: "4"
+    volumes:
+      # Saved voices (/data/voices) and the Hugging Face model cache (/data/hf).
+      - studio-data:/data
+    restart: unless-stopped
+
+volumes:
+  studio-data:
