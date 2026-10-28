@@ -1,4 +1,5 @@
 import io
+import os
 import wave
 from typing import Optional
 
@@ -7,6 +8,9 @@ import numpy as np
 SILENCE_LEVEL = 0.01
 CUT_TAIL_MS = 20
 SNAP_WINDOW_MS = 150
+# The character share tends to land early (phrases slow down toward the end, and the
+# guess then snaps to the gap before the word). Shift the guess later by this much.
+CUT_BIAS_MS = int(os.environ.get("CUT_BIAS_MS", "150"))
 FADE_OUT_MS = 30
 LEAD_KEEP_MS = 10
 
@@ -47,6 +51,7 @@ def cut_at_fraction(samples: np.ndarray, sample_rate: int, keep: float) -> np.nd
         return samples
     start, end = bounds
     guess = start + int((end - start) * min(max(keep, 0.0), 1.0))
+    guess = min(end, guess + int(sample_rate * CUT_BIAS_MS / 1000))
     window = int(sample_rate * SNAP_WINDOW_MS / 1000)
     lo, hi = max(start, guess - window), min(end, guess + window)
     frame = max(1, int(sample_rate * 0.01))
