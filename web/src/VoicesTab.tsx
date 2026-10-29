@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   addVoice,
@@ -47,13 +47,17 @@ function clipFrom(edit: ClipEdit): File {
 export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, refreshVoices, setError }: Props) {
   const [name, setName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [edit, setEdit] = useState<ClipEdit | null>(null);
   const [previews, setPreviews] = useState<Record<string, Preview>>({});
   const previewUrls = useRef<Set<string>>(new Set());
   const [editing, setEditing] = useState<Editing | null>(null);
   const [reEdit, setReEdit] = useState<ClipEdit | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // A stable array: ClipEditor re-decodes whenever `files` changes identity.
+  const editSource = editing?.source ?? null;
+  const editFiles = useMemo(() => (editSource ? [editSource] : []), [editSource]);
 
   useEffect(() => {
     const urls = previewUrls.current;
@@ -62,17 +66,22 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
 
   async function onSave(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!file || !name.trim()) return;
+    if (!files.length || !name.trim()) return;
     setError("");
     try {
-      if (edit && edit.regions.length) {
+      if (files.length > 1) {
+        // Several uploads become one combined original, so the voice can be re-trimmed later.
+        if (!edit) return;
+        const combined = new File([encodeWav(edit.samples, edit.rate)], "sources.wav", { type: "audio/wav" });
+        await addVoice(name.trim(), clipFrom(edit), combined, edit.regions);
+      } else if (edit && edit.regions.length) {
         // Keep the untrimmed upload and the cut so the voice can be re-trimmed later.
-        await addVoice(name.trim(), clipFrom(edit), file, edit.regions);
+        await addVoice(name.trim(), clipFrom(edit), files[0], edit.regions);
       } else {
-        await addVoice(name.trim(), file);
+        await addVoice(name.trim(), files[0]);
       }
       setName("");
-      setFile(null);
+      setFiles([]);
       setEdit(null);
       if (fileRef.current) fileRef.current.value = "";
       await refreshVoices();
@@ -179,20 +188,51 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
     <section>
       <form onSubmit={onSave} className="row">
         <input placeholder="Voice name" value={name} onChange={(e) => setName(e.target.value)} />
-        <input type="file" accept=".wav,.mp3,.flac,.ogg,.m4a,audio/*" ref={fileRef} onChange={(e) => setFile(e.target.files?.[0] || null)} />
-        <button type="submit" disabled={!name.trim() || !file}>
+        <input
+          type="file"
+          multiple
+          accept=".wav,.mp3,.flac,.ogg,.m4a,audio/*"
+          ref={fileRef}
+          onChange={(e) => {
+            const picked = Array.from(e.target.files ?? []);
+            // Picking again adds to the list, so clips can be gathered one batch at a time.
+            if (picked.length) setFiles((cur) => [...cur, ...picked]);
+            e.target.value = "";
+          }}
+        />
+        <button type="submit" disabled={!name.trim() || !files.length || (files.length > 1 && !edit)}>
           Save voice
         </button>
       </form>
-      {file && <ClipEditor file={file} onChange={setEdit} />}
-      <p className="hint">Upload a clean 5 to 15 second reference clip of a single speaker. Saved voices appear in the Generate tab. The default voice is preselected there.</p>
+      {files.length > 1 && (
+        <ol className="hint file-list">
+          {files.map((f, i) => (
+            <li key={`${f.name}-${i}`}>
+              {f.name}{" "}
+              <button type="button" className="link" onClick={() => setFiles((cur) => cur.filter((_, j) => j !== i))}>
+                Remove
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+      {files.length === 1 && (
+        <p className="hint">
+          {files[0].name}{" "}
+          <button type="button" className="link" onClick={() => setFiles([])}>
+            Remove
+          </button>
+        </p>
+      )}
+      {files.length > 0 && <ClipEditor files={files} onChange={setEdit} />}
+      <p className="hint">Upload a clean 5 to 15 second reference clip of a single speaker, or several files to pick the best parts of each into one clip. Saved voices appear in the Generate tab. The default voice is preselected there.</p>
 
       {editing && (
         <div className="edit-card">
           <strong>Re-trimming {editing.voice.name}</strong>
           {!editing.source && <p className="hint">Loading the original...</p>}
           {editing.source && (
-            <ClipEditor file={editing.source} initialRegions={editing.voice.regions} onChange={setReEdit} />
+            <ClipEditor files={editFiles} initialRegions={editing.voice.regions} onChange={setReEdit} />
           )}
           {editing.source && !editing.voice.has_original && (
             <p className="hint">This voice was saved before originals were kept, so you are editing its current clip. Saving keeps that clip as the original from now on.</p>

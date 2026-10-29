@@ -21,6 +21,37 @@ export function normalizeRegions(regions, duration) {
   return out;
 }
 
+export const GAP_S = 0.25;
+
+// Lay several clips end to end with a short silence between them. `bounds` holds the
+// { start, end } of each clip on the combined timeline, in seconds.
+export function concatSamples(parts, rate, gapS = GAP_S) {
+  const gap = Math.round(gapS * rate);
+  const total = parts.reduce((n, p) => n + p.length, 0) + gap * Math.max(0, parts.length - 1);
+  const samples = new Float32Array(total);
+  const bounds = [];
+  let pos = 0;
+  for (const p of parts) {
+    samples.set(p, pos);
+    bounds.push({ start: pos / rate, end: (pos + p.length) / rate });
+    pos += p.length + gap;
+  }
+  return { samples, bounds };
+}
+
+// Cut regions at clip boundaries so none spans two clips or the silence between them.
+export function splitAtBounds(regions, bounds) {
+  const out = [];
+  for (const r of regions) {
+    for (const b of bounds) {
+      const start = Math.max(r.start, b.start);
+      const end = Math.min(r.end, b.end);
+      if (end - start >= MIN_REGION_S) out.push({ start, end });
+    }
+  }
+  return out;
+}
+
 export function totalDuration(regions) {
   return regions.reduce((sum, r) => sum + (r.end - r.start), 0);
 }

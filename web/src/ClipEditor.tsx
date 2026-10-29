@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PointerEvent } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import {
+  concatSamples,
   joinRegions,
   lengthWarning,
   normalizeRegions,
   panView,
   peaks,
   resultToSourceTime,
+  splitAtBounds,
   totalDuration,
   zoomView,
 } from "./audioEdit.js";
@@ -30,6 +32,8 @@ interface Decoded {
   samples: Float32Array<ArrayBuffer>;
   rate: number;
   duration: number;
+  // Where each file sits on the timeline. One entry per file, in order.
+  bounds: Region[];
 }
 
 interface Playback {
@@ -48,7 +52,8 @@ interface Drag {
 }
 
 interface Props {
-  file: File;
+  // With several files they are laid end to end on one timeline.
+  files: File[];
   // Regions to start with once the file is decoded (re-trimming a saved voice).
   initialRegions?: Region[];
   onChange: (edit: ClipEdit | null) => void;
@@ -60,11 +65,12 @@ function cursorFor(mode: Mode | null, dragging: boolean): string {
   return "crosshair";
 }
 
-export default function ClipEditor({ file, initialRegions, onChange }: Props) {
+export default function ClipEditor({ files, initialRegions, onChange }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<Decoded | null>(null);
   const playRef = useRef<Playback | null>(null);
   const dragRef = useRef<Drag | null>(null);
+  const prevFilesRef = useRef<File[]>([]);
   const [ready, setReady] = useState(false);
   const [regions, setRegions] = useState<Region[]>([]);
   const [selected, setSelected] = useState(-1);
@@ -88,30 +94,49 @@ export default function ClipEditor({ file, initialRegions, onChange }: Props) {
   useEffect(() => {
     let cancelled = false;
     stop();
+    // Adding a file only appends to the timeline, so the regions already marked stay valid.
+    const prev = prevFilesRef.current;
+    const appended = prev.length > 0 && prev.length < files.length && prev.every((f, i) => f === files[i]);
+    prevFilesRef.current = files;
     audioRef.current = null;
     setReady(false);
-    setRegions([]);
-    setSelected(-1);
+    if (!appended) {
+      setRegions([]);
+      setSelected(-1);
+    }
     setZoom(null);
     setStatus("Decoding...");
     onChange(null);
     (async () => {
       const ctx = new AudioContext({ sampleRate: RATE });
+      let current = "the file";
       try {
-        const buf = await ctx.decodeAudioData(await file.arrayBuffer());
-        if (cancelled) return;
-        const ch = buf.getChannelData(0);
-        const mono = new Float32Array(ch.length);
-        for (let c = 0; c < buf.numberOfChannels; c++) {
-          const d = buf.getChannelData(c);
-          for (let i = 0; i < d.length; i++) mono[i] += d[i] / buf.numberOfChannels;
+        const parts: Float32Array<ArrayBuffer>[] = [];
+        for (const file of files) {
+          current = file.name || current;
+          const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+          if (cancelled) return;
+          const mono = new Float32Array(buf.length);
+          for (let c = 0; c < buf.numberOfChannels; c++) {
+            const d = buf.getChannelData(c);
+            for (let i = 0; i < d.length; i++) mono[i] += d[i] / buf.numberOfChannels;
+          }
+          parts.push(mono);
         }
-        audioRef.current = { samples: mono, rate: buf.sampleRate, duration: buf.duration };
-        setRegions(normalizeRegions(initialRegions ?? [], buf.duration));
+        const { samples, bounds } = concatSamples(parts, RATE);
+        const duration = samples.length / RATE;
+        audioRef.current = { samples, rate: RATE, duration, bounds };
+        setRegions((cur) => normalizeRegions(appended ? cur : (initialRegions ?? []), duration));
         setReady(true);
         setStatus("");
       } catch {
-        if (!cancelled) setStatus("This browser could not decode the file. It will be uploaded as is.");
+        if (!cancelled) {
+          setStatus(
+            files.length > 1
+              ? `This browser could not decode ${current}. Remove it to continue.`
+              : "This browser could not decode the file. It will be uploaded as is."
+          );
+        }
       } finally {
         ctx.close();
       }
@@ -120,7 +145,7 @@ export default function ClipEditor({ file, initialRegions, onChange }: Props) {
       cancelled = true;
       stop();
     };
-  }, [file]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [files]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (ready && audioRef.current) onChange({ ...audioRef.current, regions });
@@ -150,6 +175,15 @@ export default function ClipEditor({ file, initialRegions, onChange }: Props) {
     });
     const from = Math.max(0, Math.floor(v.start * a.rate));
     const to = Math.min(a.samples.length, Math.ceil((v.start + v.span) * a.rate));
+    if (a.bounds.length > 1) {
+      g.font = "11px sans-serif";
+      a.bounds.forEach((b, i) => {
+        if (i > 0) {
+          g.fillStyle = "rgba(25,118,210,0.15)";
+          g.fillRect(x(a.bounds[i - 1].end), 0, x(b.start) - x(a.bounds[i - 1].end), HEIGHT);
+        }
+      });
+    }
     const p = peaks(a.samples.subarray(from, Math.max(from + 1, to)), w);
     g.fillStyle = "#888";
     const mid = HEIGHT / 2;
@@ -157,6 +191,13 @@ export default function ClipEditor({ file, initialRegions, onChange }: Props) {
       const lo = p[i * 2] * mid;
       const hi = p[i * 2 + 1] * mid;
       g.fillRect(i, mid - hi, 1, Math.max(1, hi - lo));
+    }
+    if (a.bounds.length > 1) {
+      g.fillStyle = "#1976d2";
+      a.bounds.forEach((b, i) => {
+        const label = files[i]?.name ?? "";
+        g.fillText(`${i + 1}. ${label}`.slice(0, 28), Math.max(2, x(b.start)) + 4, 12);
+      });
     }
     if (playhead != null) {
       g.fillStyle = "#d32f2f";
@@ -191,7 +232,7 @@ export default function ClipEditor({ file, initialRegions, onChange }: Props) {
     return () => canvas.removeEventListener("wheel", onWheel);
   }, [ready]);
 
-  const timeAt = (e: PointerEvent<HTMLCanvasElement>) => {
+  const timeAt = (e: MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     const a = audioRef.current;
     if (!canvas || !a) return 0;
@@ -266,11 +307,21 @@ export default function ClipEditor({ file, initialRegions, onChange }: Props) {
     dragRef.current = null;
     // Merge overlaps and drop slivers; keep the selection on the region holding the dragged one.
     const cur = regions[d.index];
-    const next = normalizeRegions(regions, a.duration);
+    const cut = a.bounds.length > 1 ? splitAtBounds(regions, a.bounds) : regions;
+    const next = normalizeRegions(cut, a.duration);
     setRegions(next);
     const mid = cur ? (cur.start + cur.end) / 2 : -1;
     setSelected(next.findIndex((r) => mid >= r.start && mid <= r.end));
     if (canvas) canvas.style.cursor = cursorFor(null, false);
+  }
+
+  // Double-click a region to hear just that region.
+  function onDoubleClick(e: MouseEvent<HTMLCanvasElement>) {
+    const a = audioRef.current;
+    const canvas = canvasRef.current;
+    if (!a || !canvas) return;
+    const hit = hitAt(timeAt(e), a, canvas);
+    if (hit) play([regions[hit.index]]);
   }
 
   function zoomBy(factor: number) {
@@ -323,6 +374,7 @@ export default function ClipEditor({ file, initialRegions, onChange }: Props) {
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
+            onDoubleClick={onDoubleClick}
           />
           {zoom && (
             <input
@@ -367,7 +419,7 @@ export default function ClipEditor({ file, initialRegions, onChange }: Props) {
             {regions.length
               ? `Keeping ${regions.length} region${regions.length > 1 ? "s" : ""}, ${total.toFixed(1)}s total.`
               : "Drag on the waveform to mark the parts to keep. With no regions, the whole file is saved."}{" "}
-            {warn} Mouse wheel zooms, Shift+wheel scrolls. Drag a region's edge to resize it, or its body to move it.
+            {warn} Mouse wheel zooms, Shift+wheel scrolls. Drag a region's edge to resize it, or its body to move it. Double-click a region to play only that region.
           </p>
         </>
       )}
