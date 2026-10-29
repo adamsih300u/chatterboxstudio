@@ -7,6 +7,9 @@ export interface Region {
 export const MIN_REGION_S: number;
 export const FADE_S: number;
 export function normalizeRegions(regions: Region[], duration: number): Region[];
+export const GAP_S: number;
+export function concatSamples(parts: Float32Array<ArrayBuffer>[], rate: number, gapS?: number): { samples: Float32Array<ArrayBuffer>; bounds: Region[] };
+export function splitAtBounds(regions: Region[], bounds: Region[]): Region[];
 export function totalDuration(regions: Region[]): number;
 export function joinRegions(samples: Float32Array<ArrayBuffer>, rate: number, regions: Region[], fadeS?: number): Float32Array<ArrayBuffer>;
 export function resultToSourceTime(regions: Region[], t: number): number;

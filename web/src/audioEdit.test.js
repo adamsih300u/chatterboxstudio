@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   clampView,
+  concatSamples,
+  splitAtBounds,
   encodeWav,
   joinRegions,
   MIN_VIEW_S,
@@ -29,6 +31,32 @@ test("normalizeRegions clamps, drops slivers, sorts and merges", () => {
     { start: 2.5, end: 5 },
     { start: 9, end: 10 },
   ]);
+});
+
+test("concatSamples lays clips end to end with a gap and reports bounds", () => {
+  const rate = 100;
+  const { samples, bounds } = concatSamples([new Float32Array(200).fill(1), new Float32Array(100).fill(2)], rate, 0.5);
+  assert.equal(samples.length, 200 + 50 + 100);
+  assert.deepEqual(bounds, [{ start: 0, end: 2 }, { start: 2.5, end: 3.5 }]);
+  assert.equal(samples[199], 1);
+  assert.equal(samples[200], 0);
+  assert.equal(samples[250], 2);
+});
+
+test("concatSamples with one clip is that clip", () => {
+  const { samples, bounds } = concatSamples([new Float32Array(300).fill(1)], 100);
+  assert.equal(samples.length, 300);
+  assert.deepEqual(bounds, [{ start: 0, end: 3 }]);
+});
+
+test("splitAtBounds cuts regions at clip edges and drops the gap", () => {
+  const bounds = [{ start: 0, end: 2 }, { start: 2.5, end: 4 }];
+  assert.deepEqual(splitAtBounds([{ start: 1, end: 3 }], bounds), [
+    { start: 1, end: 2 },
+    { start: 2.5, end: 3 },
+  ]);
+  assert.deepEqual(splitAtBounds([{ start: 2.1, end: 2.4 }], bounds), []);
+  assert.deepEqual(splitAtBounds([{ start: 0.5, end: 1.5 }], bounds), [{ start: 0.5, end: 1.5 }]);
 });
 
 test("totalDuration sums regions", () => {
