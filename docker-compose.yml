@@ -8,7 +8,7 @@ services:
       DEFAULT_VARIANT: turbo
       # Comma-separated variants to load into memory at startup. The UI blocks
       # Generate for a model until it is ready. Add standard,multilingual if RAM allows.
-      PRELOAD_VARIANTS: turbo
+      PRELOAD_VARIANTS: turbo,nano
       # Torch CPU threads. Unset = all cores. 4 is a benchmark candidate on SMT or busy hosts.
       TORCH_THREADS: "4"
     volumes:

@@ -29,7 +29,7 @@ Download weights ahead of time into the cache volume (one-off, nothing is baked 
 With no arguments every variant is fetched. Nano (110M, `ResembleAI/chatterbox-nano`) is the smallest
 model and suits a Pi: it is upstream's `ChatterboxTurboTTS` loaded with `nano=True`, so it takes the
 same settings and `[laugh]`-style tags as Turbo. Select it with `model: "nano"` on the API. To also load models into memory at startup, set
-`PRELOAD_VARIANTS` (comma-separated, default `turbo` in `docker-compose.yml`). Each loaded
+`PRELOAD_VARIANTS` (comma-separated, default `turbo,nano` in `docker-compose.yml`). Each loaded
 model uses RAM, so keep the list short on a Pi.
 
 Offline host: download the Hugging Face snapshots elsewhere and copy them into `/data/hf`.
