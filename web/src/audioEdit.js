@@ -79,6 +79,32 @@ export function joinRegions(samples, rate, regions, fadeS = FADE_S) {
   return out;
 }
 
+// Largest WAV the client will send as an original; the server caps uploads at 20 MB.
+export const MAX_ORIGINAL_BYTES = 18 * 1024 * 1024;
+
+export function wavBytes(sampleCount) {
+  return 44 + sampleCount * 2;
+}
+
+// Keep only the regions, back to back with no fades. Returns the new samples and the regions
+// re-based onto them, so the editor still shows the same cuts on a much shorter original.
+export function keepOnlyRegions(samples, rate, regions) {
+  const parts = regions.map((r) => {
+    const a = Math.max(0, Math.round(r.start * rate));
+    const b = Math.min(samples.length, Math.round(r.end * rate));
+    return samples.slice(a, Math.max(a, b));
+  });
+  const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+  const rebased = [];
+  let pos = 0;
+  for (const p of parts) {
+    out.set(p, pos);
+    rebased.push({ start: pos / rate, end: (pos + p.length) / rate });
+    pos += p.length;
+  }
+  return { samples: out, regions: rebased };
+}
+
 // Map a time inside the joined result back to a time in the source.
 export function resultToSourceTime(regions, t) {
   let left = t;

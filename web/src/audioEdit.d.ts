@@ -28,3 +28,6 @@ export function lengthWarning(seconds: number): string;
 export function formatDuration(seconds: number): string;
 export const LARGE_FILE_BYTES: number;
 export function needsServerDecode(name: string, size: number): boolean;
+export const MAX_ORIGINAL_BYTES: number;
+export function wavBytes(sampleCount: number): number;
+export function keepOnlyRegions(samples: Float32Array<ArrayBuffer>, rate: number, regions: Region[]): { samples: Float32Array<ArrayBuffer>; regions: Region[] };
