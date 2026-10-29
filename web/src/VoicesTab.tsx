@@ -13,6 +13,7 @@ import {
 } from "./api";
 import type { VoiceOut } from "./api";
 import ClipEditor from "./ClipEditor";
+import MoreMenu from "./MoreMenu";
 import type { ClipEdit } from "./ClipEditor";
 import { encodeWav, joinRegions } from "./audioEdit.js";
 
@@ -228,28 +229,36 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
                 {v.name}
                 {v.id === defaultVoice && <strong className="badge"> (default)</strong>}
               </span>
-              <audio controls preload="none" src={`/api/voices/${encodeURIComponent(v.id)}/audio?v=${v.updated}`} />
+              <div className="voice-player">
+                {preview?.url ? (
+                  <>
+                    <audio controls autoPlay src={preview.url} />
+                    <span className="hint">Preview, {preview.cached ? "from cache" : "freshly rendered"}</span>
+                    <button type="button" className="link" title="Back to the saved clip" onClick={() => dropPreview(v.id)}>
+                      ✕
+                    </button>
+                  </>
+                ) : (
+                  <audio controls preload="none" src={`/api/voices/${encodeURIComponent(v.id)}/audio?v=${v.updated}`} />
+                )}
+              </div>
               <button onClick={() => onPreview(v.id)} disabled={preview?.busy} title="Speak a sample sentence in this voice with the selected model">
                 {preview?.busy ? "Rendering..." : "Preview"}
               </button>
-              <button onClick={() => onEdit(v)} disabled={editing?.voice.id === v.id}>
-                Edit
-              </button>
-              <a className="button" href={voiceExportUrl(v.id)} download>
-                Export
-              </a>
-              <button onClick={() => onDefault(v.id === defaultVoice ? null : v.id)}>
-                {v.id === defaultVoice ? "Clear default" : "Set default"}
-              </button>
-              <button className="danger" onClick={() => onDelete(v.id)}>
-                Delete
-              </button>
-              {preview?.url && (
-                <div className="voice-preview">
-                  <audio controls autoPlay src={preview.url} />
-                  <span className="hint">{preview.cached ? "from cache" : "freshly rendered"}</span>
-                </div>
-              )}
+              <MoreMenu>
+                <button type="button" role="menuitem" onClick={() => onEdit(v)} disabled={editing?.voice.id === v.id}>
+                  Edit
+                </button>
+                <a role="menuitem" href={voiceExportUrl(v.id)} download>
+                  Export
+                </a>
+                <button type="button" role="menuitem" onClick={() => onDefault(v.id === defaultVoice ? null : v.id)}>
+                  {v.id === defaultVoice ? "Clear default" : "Set default"}
+                </button>
+                <button type="button" role="menuitem" className="menu-danger" onClick={() => onDelete(v.id)}>
+                  Delete
+                </button>
+              </MoreMenu>
             </li>
           );
         })}
