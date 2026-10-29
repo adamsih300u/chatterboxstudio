@@ -1,6 +1,6 @@
 """Download model weights into the Hugging Face cache without starting the API.
 
-    python -m app.prefetch turbo standard multilingual
+    python -m app.prefetch turbo nano standard multilingual
 
 With no arguments, every variant is fetched. Each variant is loaded once
 (which is what populates the cache) and then released before the next one.

@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, model_validator
 
 from .audio import cut_at_fraction, stitch, to_wav_bytes
-from .config import get_settings
+from .config import VariantName, get_settings
 from .convert import ConvertError, decode, encode, get_format, wav_duration
 from .db import Database
 from .generations import GenerationStore
@@ -166,7 +166,7 @@ class ParamSpec(BaseModel):
 
 
 class ModelInfo(BaseModel):
-    id: Literal["turbo", "standard", "multilingual"]
+    id: VariantName
     label: str
     multilingual: bool
     state: Literal["idle", "loading", "ready", "error"]

@@ -29,7 +29,9 @@ class StubEngine:
         }
 
     def start_load(self, variant):
-        if variant not in ("turbo", "standard", "multilingual"):
+        from app.models import VARIANTS
+
+        if variant not in VARIANTS:
             raise ValueError(f"unknown variant '{variant}'")
         self._loaded.add(variant)
         return "loading"

@@ -74,4 +74,4 @@ def test_voice_name_length_limit(client):
 
 def test_openapi_documents_variants(client):
     schema = client.get("/openapi.json").json()["components"]["schemas"]
-    assert schema["ModelInfo"]["properties"]["id"]["enum"] == ["turbo", "standard", "multilingual"]
+    assert schema["ModelInfo"]["properties"]["id"]["enum"] == ["turbo", "nano", "standard", "multilingual"]
