@@ -13,9 +13,11 @@ import {
 } from "./api";
 import type { VoiceOut } from "./api";
 import ClipEditor from "./ClipEditor";
+import { FormatSelect, useExportFormat } from "./ExportFormat";
+import Player from "./Player";
 import MoreMenu from "./MoreMenu";
 import type { ClipEdit } from "./ClipEditor";
-import { encodeWav, joinRegions } from "./audioEdit.js";
+import { encodeWav, joinRegions, needsServerDecode } from "./audioEdit.js";
 
 interface Props {
   model: string;
@@ -30,6 +32,7 @@ interface Preview {
   busy: boolean;
   url?: string;
   cached?: boolean;
+  duration?: number | null;
 }
 
 interface Editing {
@@ -54,6 +57,7 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
   const [editing, setEditing] = useState<Editing | null>(null);
   const [reEdit, setReEdit] = useState<ClipEdit | null>(null);
   const [saving, setSaving] = useState(false);
+  const [format, setFormat] = useExportFormat();
 
   // A stable array: ClipEditor re-decodes whenever `files` changes identity.
   const editSource = editing?.source ?? null;
@@ -64,13 +68,17 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
     return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, []);
 
+  // A single ordinary upload is sent untouched. Several files, or one the server had to decode
+  // (an audiobook), are sent as the decoded audio the editor holds.
+  const rawSingle = files.length === 1 && !needsServerDecode(files[0].name, files[0].size);
+
   async function onSave(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!files.length || !name.trim()) return;
     setError("");
     try {
-      if (files.length > 1) {
-        // Several uploads become one combined original, so the voice can be re-trimmed later.
+      if (!rawSingle) {
+        // The decoded audio becomes the original, so the voice can be re-trimmed later.
         if (!edit) return;
         const combined = new File([encodeWav(edit.samples, edit.rate)], "sources.wav", { type: "audio/wav" });
         await addVoice(name.trim(), clipFrom(edit), combined, edit.regions);
@@ -137,7 +145,7 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
     setError("");
     setPreviews((prev) => ({ ...prev, [id]: { ...prev[id], busy: true } }));
     try {
-      const { blob, cached } = await previewVoice(id, model);
+      const { blob, cached, duration } = await previewVoice(id, model);
       const url = URL.createObjectURL(blob);
       previewUrls.current.add(url);
       setPreviews((prev) => {
@@ -146,7 +154,7 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
           URL.revokeObjectURL(old);
           previewUrls.current.delete(old);
         }
-        return { ...prev, [id]: { busy: false, url, cached } };
+        return { ...prev, [id]: { busy: false, url, cached, duration } };
       });
     } catch (err) {
       setPreviews((prev) => ({ ...prev, [id]: { ...prev[id], busy: false } }));
@@ -191,7 +199,7 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
         <input
           type="file"
           multiple
-          accept=".wav,.mp3,.flac,.ogg,.m4a,audio/*"
+          accept=".wav,.mp3,.flac,.ogg,.m4a,.m4b,.aac,.opus,audio/*"
           ref={fileRef}
           onChange={(e) => {
             const picked = Array.from(e.target.files ?? []);
@@ -200,7 +208,7 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
             e.target.value = "";
           }}
         />
-        <button type="submit" disabled={!name.trim() || !files.length || (files.length > 1 && !edit)}>
+        <button type="submit" disabled={!name.trim() || !files.length || (!rawSingle && !edit)}>
           Save voice
         </button>
       </form>
@@ -248,6 +256,10 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
         </div>
       )}
 
+      <div className="voices-toolbar">
+        <span className="hint">Export format</span>
+        <FormatSelect value={format} onChange={setFormat} label="Export format" />
+      </div>
       <ul className="voices">
         <li>
           <span>
@@ -272,14 +284,14 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
               <div className="voice-player">
                 {preview?.url ? (
                   <>
-                    <audio controls autoPlay src={preview.url} />
+                    <Player src={preview.url} duration={preview.duration} autoPlay />
                     <span className="hint">Preview, {preview.cached ? "from cache" : "freshly rendered"}</span>
                     <button type="button" className="link" title="Back to the saved clip" onClick={() => dropPreview(v.id)}>
                       ✕
                     </button>
                   </>
                 ) : (
-                  <audio controls preload="none" src={`/api/voices/${encodeURIComponent(v.id)}/audio?v=${v.updated}`} />
+                  <Player src={`/api/voices/${encodeURIComponent(v.id)}/audio?v=${v.updated}`} duration={v.duration} />
                 )}
               </div>
               <button onClick={() => onPreview(v.id)} disabled={preview?.busy} title="Speak a sample sentence in this voice with the selected model">
@@ -289,8 +301,8 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
                 <button type="button" role="menuitem" onClick={() => onEdit(v)} disabled={editing?.voice.id === v.id}>
                   Edit
                 </button>
-                <a role="menuitem" href={voiceExportUrl(v.id)} download>
-                  Export
+                <a role="menuitem" href={voiceExportUrl(v.id, format)} download>
+                  Export as {format.toUpperCase()}
                 </a>
                 <button type="button" role="menuitem" onClick={() => onDefault(v.id === defaultVoice ? null : v.id)}>
                   {v.id === defaultVoice ? "Clear default" : "Set default"}

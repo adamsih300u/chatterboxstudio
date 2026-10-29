@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  formatDuration,
+  needsServerDecode,
   clampView,
   concatSamples,
   splitAtBounds,
@@ -130,4 +132,20 @@ test("panView and clampView clamp to the clip", () => {
   assert.deepEqual(panView({ start: 2, span: 4 }, 10, -100), { start: 0, span: 4 });
   assert.deepEqual(clampView({ start: -3, span: 99 }, 10), { start: 0, span: 10 });
   assert.deepEqual(clampView({ start: 0, span: 1 }, 0.1), { start: 0, span: 0.1 }); // clip shorter than the minimum
+});
+
+test("formatDuration gives m:ss and h:mm:ss, and nothing for unknown lengths", () => {
+  assert.equal(formatDuration(0), "0:00");
+  assert.equal(formatDuration(7.4), "0:07");
+  assert.equal(formatDuration(65), "1:05");
+  assert.equal(formatDuration(3725), "1:02:05");
+  assert.equal(formatDuration(Infinity), "");
+  assert.equal(formatDuration(NaN), "");
+  assert.equal(formatDuration(-1), "");
+});
+
+test("needsServerDecode picks audiobooks and big files", () => {
+  assert.equal(needsServerDecode("Book.M4B", 1000), true);
+  assert.equal(needsServerDecode("clip.m4a", 1000), false);
+  assert.equal(needsServerDecode("clip.wav", 40 * 1024 * 1024), true);
 });

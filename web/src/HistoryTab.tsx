@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { deleteGeneration, errorMessage } from "./api";
 import type { GenerationOut } from "./api";
+import { generationAudioUrl } from "./api";
+import { FormatSelect, useExportFormat } from "./ExportFormat";
+import Player from "./Player";
 
 interface Props {
   generations: GenerationOut[];
@@ -16,11 +19,13 @@ function describeParams(params: GenerationOut["params"]) {
 interface CardProps {
   generation: GenerationOut;
   onDelete: (id: string) => void;
+  format: string;
+  setFormat: (format: string) => void;
 }
 
-function GenerationCard({ generation: g, onDelete }: CardProps) {
+function GenerationCard({ generation: g, onDelete, format, setFormat }: CardProps) {
   const [open, setOpen] = useState(false);
-  const url = `/api/generations/${encodeURIComponent(g.id)}/audio`;
+  const url = generationAudioUrl(g.id);
   const extra = describeParams(g.params);
   const lines = g.segments?.length ?? 0;
   return (
@@ -46,9 +51,10 @@ function GenerationCard({ generation: g, onDelete }: CardProps) {
         {open && extra && <p className="hint">Settings: {extra}</p>}
       </div>
       <div className="gen-side">
-        <audio controls preload="none" src={url} />
+        <Player src={url} duration={g.duration} />
         <div className="gen-actions">
-          <a className="button" href={url} download={`${g.id}.wav`}>
+          <FormatSelect value={format} onChange={setFormat} />
+          <a className="button" href={generationAudioUrl(g.id, format, true)} download={`${g.id}.${format}`}>
             Download
           </a>
           <button className="danger" onClick={() => onDelete(g.id)}>
@@ -61,6 +67,7 @@ function GenerationCard({ generation: g, onDelete }: CardProps) {
 }
 
 export default function HistoryTab({ generations, refreshGenerations, setError }: Props) {
+  const [format, setFormat] = useExportFormat();
   async function onDelete(id: string) {
     setError("");
     try {
@@ -77,7 +84,7 @@ export default function HistoryTab({ generations, refreshGenerations, setError }
       <ul className="gens-list">
         {generations.length === 0 && <li className="hint">Nothing here yet. Clips you generate with "Keep in History" on show up here.</li>}
         {generations.map((g) => (
-          <GenerationCard key={g.id} generation={g} onDelete={onDelete} />
+          <GenerationCard key={g.id} generation={g} onDelete={onDelete} format={format} setFormat={setFormat} />
         ))}
       </ul>
     </section>

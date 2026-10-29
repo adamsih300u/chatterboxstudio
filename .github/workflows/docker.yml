@@ -30,6 +30,8 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: api/requirements-dev.txt
+      - name: ffmpeg (audio format tests)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: API tests (stubbed model)
         working-directory: api
         run: |

@@ -36,6 +36,12 @@ async function json<T>(res: Response): Promise<T> {
   return (await check(res)).json() as Promise<T>;
 }
 
+// The server states a clip's length up front, so it can be shown before playback.
+function headerSeconds(res: Response): number | null {
+  const v = parseFloat(res.headers.get("X-Audio-Duration") ?? "");
+  return Number.isFinite(v) ? v : null;
+}
+
 export async function getModels(): Promise<ModelList> {
   return json(await fetch("/api/models"));
 }
@@ -92,12 +98,36 @@ export async function getVoiceSource(id: string): Promise<Blob> {
   return (await check(await fetch(`/api/voices/${encodeURIComponent(id)}/source`))).blob();
 }
 
-export function voiceExportUrl(id: string): string {
-  return `/api/voices/${encodeURIComponent(id)}/export`;
+export function voiceExportUrl(id: string, format = "wav"): string {
+  return `/api/voices/${encodeURIComponent(id)}/export?format=${encodeURIComponent(format)}`;
+}
+
+export function generationAudioUrl(id: string, format = "wav", download = false): string {
+  const q = `format=${encodeURIComponent(format)}${download ? "&download=true" : ""}`;
+  return `/api/generations/${encodeURIComponent(id)}/audio?${q}`;
+}
+
+// Seconds of a file the server hands back when the browser should not decode the whole thing.
+export const SERVER_DECODE_SECONDS = 600;
+
+// Any audio ffmpeg reads (M4B included) as a mono WAV, first SERVER_DECODE_SECONDS only.
+export async function decodeOnServer(file: File): Promise<ArrayBuffer> {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await check(await fetch(`/api/audio/decode?seconds=${SERVER_DECODE_SECONDS}`, { method: "POST", body }));
+  return res.arrayBuffer();
+}
+
+// Re-encode a WAV that is not saved anywhere (a fresh generation) for download.
+export async function convertWav(wav: Blob, format: string): Promise<Blob> {
+  const body = new FormData();
+  body.append("file", wav, "speech.wav");
+  const res = await check(await fetch(`/api/convert?format=${encodeURIComponent(format)}`, { method: "POST", body }));
+  return res.blob();
 }
 
 // Speak the fixed preview sentence; `cached` is true when the server reused an earlier render.
-export async function previewVoice(id: string, model?: string | null): Promise<{ blob: Blob; cached: boolean }> {
+export async function previewVoice(id: string, model?: string | null): Promise<{ blob: Blob; cached: boolean; duration: number | null }> {
   const res = await check(
     await fetch(`/api/voices/${encodeURIComponent(id)}/preview`, {
       method: "POST",
@@ -105,7 +135,7 @@ export async function previewVoice(id: string, model?: string | null): Promise<{
       body: JSON.stringify({ model: model || null }),
     })
   );
-  return { blob: await res.blob(), cached: res.headers.get("X-Preview-Cached") === "true" };
+  return { blob: await res.blob(), cached: res.headers.get("X-Preview-Cached") === "true", duration: headerSeconds(res) };
 }
 
 export async function deleteVoice(id: string): Promise<void> {
@@ -164,7 +194,7 @@ export async function synthesize({
   params,
   pauseMs,
   save,
-}: SynthesizeArgs): Promise<{ blob: Blob; id: string | null }> {
+}: SynthesizeArgs): Promise<{ blob: Blob; id: string | null; duration: number | null }> {
   const res = await check(
     await fetch("/api/tts", {
       method: "POST",
@@ -180,5 +210,5 @@ export async function synthesize({
       }),
     })
   );
-  return { blob: await res.blob(), id: res.headers.get("X-Generation-Id") };
+  return { blob: await res.blob(), id: res.headers.get("X-Generation-Id"), duration: headerSeconds(res) };
 }

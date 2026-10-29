@@ -32,7 +32,7 @@ def test_api_tts_multilingual_and_validation(client, engine):
     assert engine.calls[-1]["language"] == "es"
     assert client.post("/api/tts", json={"text": "  "}).status_code == 400
     assert client.post("/api/tts", json={"text": "x", "model": "nope"}).status_code == 400
-    bad = client.post("/v1/audio/speech", json={"input": "x", "response_format": "mp3"})
+    bad = client.post("/v1/audio/speech", json={"input": "x", "response_format": "midi"})
     assert bad.status_code == 400
 
 

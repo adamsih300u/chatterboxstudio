@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import AdvancedParams from "./AdvancedParams";
 import type { ParamValue, ParamValues } from "./AdvancedParams";
 import TagTextarea, { TURBO_TAGS } from "./TagTextarea";
-import { errorMessage, synthesize } from "./api";
+import { convertWav, errorMessage, synthesize } from "./api";
+import { FormatSelect, saveBlob, useExportFormat } from "./ExportFormat";
+import Player from "./Player";
 import type { ModelInfo, VoiceOut } from "./api";
 
 const STATE_LABEL: Record<ModelInfo["state"], string> = { idle: "not loaded", loading: "loading...", ready: "", error: "failed to load" };
@@ -39,6 +41,10 @@ export default function GenerateTab({ models, model, setModel, voices, defaultVo
   const [pauseMs, setPauseMs] = useState(300);
   const [keep, setKeep] = useState(true);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioLength, setAudioLength] = useState<number | null>(null);
+  const [format, setFormat] = useExportFormat();
+  const [converting, setConverting] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Follow the saved default whenever it changes (it loads after first render).
@@ -62,17 +68,32 @@ export default function GenerateTab({ models, model, setModel, voices, defaultVo
     setError("");
     setBusy(true);
     try {
-      const { blob } = await synthesize({ text, voice, model, language, params: values, pauseMs, save: keep });
+      const { blob, duration } = await synthesize({ text, voice, model, language, params: values, pauseMs, save: keep });
       setAudioUrl((old) => {
         if (old) URL.revokeObjectURL(old);
         return URL.createObjectURL(blob);
       });
+      setAudioBlob(blob);
+      setAudioLength(duration);
       refreshModels().catch(() => {});
       if (keep) refreshGenerations().catch(() => {});
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onDownload() {
+    if (!audioBlob) return;
+    setError("");
+    setConverting(true);
+    try {
+      saveBlob(await convertWav(audioBlob, format), `speech.${format}`);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setConverting(false);
     }
   }
 
@@ -162,10 +183,17 @@ export default function GenerateTab({ models, model, setModel, voices, defaultVo
       </div>
       {audioUrl && (
         <div className="player">
-          <audio controls src={audioUrl} />
-          <a href={audioUrl} download="speech.wav">
-            Download
-          </a>
+          <Player src={audioUrl} duration={audioLength} />
+          <FormatSelect value={format} onChange={setFormat} />
+          {format === "wav" ? (
+            <a href={audioUrl} download="speech.wav">
+              Download
+            </a>
+          ) : (
+            <button type="button" onClick={onDownload} disabled={converting}>
+              {converting ? "Converting..." : "Download"}
+            </button>
+          )}
         </div>
       )}
     </section>

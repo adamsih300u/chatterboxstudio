@@ -9,6 +9,7 @@ from typing import Optional
 
 from sqlalchemy import select
 
+from .convert import file_duration
 from .db import Database, GenerationRow
 
 ID_RE = re.compile(r"^[0-9]{14}-[0-9a-f]{8}$")
@@ -36,6 +37,7 @@ class Generation:
             "created": self.created,
             "segments": self.segments,
             "params": self.params,
+            "duration": file_duration(self.path),
         }
 
 

@@ -73,6 +73,34 @@
         "title": "Body_add_voice_api_voices_post",
         "type": "object"
       },
+      "Body_convert_api_convert_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_convert_api_convert_post",
+        "type": "object"
+      },
+      "Body_decode_audio_api_audio_decode_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_decode_audio_api_audio_decode_post",
+        "type": "object"
+      },
       "Body_update_voice_api_voices__voice_id__put": {
         "properties": {
           "file": {
@@ -189,6 +217,17 @@
           "created": {
             "title": "Created",
             "type": "number"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
           },
           "id": {
             "title": "Id",
@@ -742,6 +781,17 @@
             "title": "Created",
             "type": "number"
           },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          },
           "has_original": {
             "title": "Has Original",
             "type": "boolean"
@@ -785,6 +835,114 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/audio/decode": {
+      "post": {
+        "description": "Any audio ffmpeg reads (M4B audiobooks included) as a mono WAV window, so the browser\nnever has to decode a whole book.",
+        "operationId": "decode_audio_api_audio_decode_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "default": 0.0,
+              "title": "Start",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "seconds",
+            "required": false,
+            "schema": {
+              "default": 1800.0,
+              "title": "Seconds",
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_decode_audio_api_audio_decode_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decode Audio"
+      }
+    },
+    "/api/convert": {
+      "post": {
+        "description": "Re-encode a WAV (a fresh, unsaved generation) for download.",
+        "operationId": "convert_api_convert_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "mp3",
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_convert_api_convert_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convert"
+      }
+    },
     "/api/generations": {
       "get": {
         "operationId": "list_generations_api_generations_get",
@@ -882,6 +1040,26 @@
             "schema": {
               "title": "Gen Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "wav",
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "download",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Download",
+              "type": "boolean"
             }
           }
         ],
@@ -1269,7 +1447,7 @@
     },
     "/api/voices/{voice_id}/export": {
       "get": {
-        "description": "The trimmed clip as a download; upload it to another instance to import the voice.",
+        "description": "The trimmed clip as a download; upload it to another instance to import the voice.\nWithout `format` the stored file is sent as is.",
         "operationId": "voice_export_api_voices__voice_id__export_get",
         "parameters": [
           {
@@ -1278,6 +1456,16 @@
             "required": true,
             "schema": {
               "title": "Voice Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Format",
               "type": "string"
             }
           }

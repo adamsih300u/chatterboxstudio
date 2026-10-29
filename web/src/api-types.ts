@@ -4,6 +4,47 @@
  */
 
 export interface paths {
+    "/api/audio/decode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decode Audio
+         * @description Any audio ffmpeg reads (M4B audiobooks included) as a mono WAV window, so the browser
+         *     never has to decode a whole book.
+         */
+        post: operations["decode_audio_api_audio_decode_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/convert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert
+         * @description Re-encode a WAV (a fresh, unsaved generation) for download.
+         */
+        post: operations["convert_api_convert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/generations": {
         parameters: {
             query?: never;
@@ -228,6 +269,7 @@ export interface paths {
         /**
          * Voice Export
          * @description The trimmed clip as a download; upload it to another instance to import the voice.
+         *     Without `format` the stored file is sent as is.
          */
         get: operations["voice_export_api_voices__voice_id__export_get"];
         put?: never;
@@ -336,6 +378,16 @@ export interface components {
              */
             regions: string;
         };
+        /** Body_convert_api_convert_post */
+        Body_convert_api_convert_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_decode_audio_api_audio_decode_post */
+        Body_decode_audio_api_audio_decode_post: {
+            /** File */
+            file: string;
+        };
         /** Body_update_voice_api_voices__voice_id__put */
         Body_update_voice_api_voices__voice_id__put: {
             /** File */
@@ -377,6 +429,8 @@ export interface components {
         GenerationOut: {
             /** Created */
             created: number;
+            /** Duration */
+            duration?: number | null;
             /** Id */
             id: string;
             /** Language */
@@ -603,6 +657,8 @@ export interface components {
         VoiceOut: {
             /** Created */
             created: number;
+            /** Duration */
+            duration?: number | null;
             /** Has Original */
             has_original: boolean;
             /** Id */
@@ -623,6 +679,77 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    decode_audio_api_audio_decode_post: {
+        parameters: {
+            query?: {
+                start?: number;
+                seconds?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_decode_audio_api_audio_decode_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convert_api_convert_post: {
+        parameters: {
+            query?: {
+                format?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_convert_api_convert_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_generations_api_generations_get: {
         parameters: {
             query?: never;
@@ -707,7 +834,10 @@ export interface operations {
     };
     generation_audio_api_generations__gen_id__audio_get: {
         parameters: {
-            query?: never;
+            query?: {
+                format?: string;
+                download?: boolean;
+            };
             header?: never;
             path: {
                 gen_id: string;
@@ -1056,7 +1186,9 @@ export interface operations {
     };
     voice_export_api_voices__voice_id__export_get: {
         parameters: {
-            query?: never;
+            query?: {
+                format?: string;
+            };
             header?: never;
             path: {
                 voice_id: string;
