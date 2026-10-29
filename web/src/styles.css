@@ -143,10 +143,6 @@ textarea {
   gap: 0.5rem;
   align-items: stretch;
 }
-.gen-side audio {
-  width: 16rem;
-  max-width: 100%;
-}
 .gen-actions {
   display: flex;
   gap: 0.5rem;
@@ -336,16 +332,28 @@ label.inline {
 
 .clip-editor { margin: 0.75rem 0; }
 .clip-canvas { display: block; width: 100%; height: 120px; border: 1px solid #ccc; border-radius: 4px; cursor: crosshair; touch-action: none; }
-.player-with-length {
+.player-compact {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
 }
-.duration {
+.player-btn {
+  padding: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  line-height: 1;
+  font-size: 0.75rem;
+}
+.player-seek {
+  width: 6rem;
+  margin: 0;
+}
+.player-time {
   font-variant-numeric: tabular-nums;
   font-size: 0.85rem;
   opacity: 0.75;
-  min-width: 2.5rem;
+  white-space: nowrap;
 }
 .format-select {
   font-size: 0.85rem;
