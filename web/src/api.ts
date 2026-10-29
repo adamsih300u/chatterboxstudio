@@ -182,6 +182,8 @@ export interface SynthesizeArgs {
   params?: Schemas["TTSRequest"]["params"];
   pauseMs?: number;
   save?: boolean;
+  // Omit for a random take; the seed that was used comes back either way.
+  seed?: number | null;
 }
 
 // text may hold inline {Voice} tags; the server splits it per voice and stitches the clips.
@@ -194,7 +196,8 @@ export async function synthesize({
   params,
   pauseMs,
   save,
-}: SynthesizeArgs): Promise<{ blob: Blob; id: string | null; duration: number | null }> {
+  seed,
+}: SynthesizeArgs): Promise<{ blob: Blob; id: string | null; duration: number | null; seed: number | null }> {
   const res = await check(
     await fetch("/api/tts", {
       method: "POST",
@@ -207,8 +210,15 @@ export async function synthesize({
         params,
         pause_ms: pauseMs,
         save,
+        seed: seed ?? null,
       }),
     })
   );
-  return { blob: await res.blob(), id: res.headers.get("X-Generation-Id"), duration: headerSeconds(res) };
+  const used = parseInt(res.headers.get("X-Seed") ?? "", 10);
+  return {
+    blob: await res.blob(),
+    id: res.headers.get("X-Generation-Id"),
+    duration: headerSeconds(res),
+    seed: Number.isFinite(used) ? used : null,
+  };
 }

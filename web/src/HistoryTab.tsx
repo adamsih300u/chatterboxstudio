@@ -7,6 +7,7 @@ import Player from "./Player";
 
 interface Props {
   generations: GenerationOut[];
+  onReuse: (g: GenerationOut) => void;
   refreshGenerations: () => Promise<void>;
   setError: (message: string) => void;
 }
@@ -19,11 +20,12 @@ function describeParams(params: GenerationOut["params"]) {
 interface CardProps {
   generation: GenerationOut;
   onDelete: (id: string) => void;
+  onReuse: (g: GenerationOut) => void;
   format: string;
   setFormat: (format: string) => void;
 }
 
-function GenerationCard({ generation: g, onDelete, format, setFormat }: CardProps) {
+function GenerationCard({ generation: g, onDelete, onReuse, format, setFormat }: CardProps) {
   const [open, setOpen] = useState(false);
   const url = generationAudioUrl(g.id);
   const extra = describeParams(g.params);
@@ -34,7 +36,8 @@ function GenerationCard({ generation: g, onDelete, format, setFormat }: CardProp
         <span className="gen-meta">
           {g.model}
           {g.voice ? ` / ${g.voice}` : ""}
-          {lines > 1 ? ` / ${lines} lines` : ""} / {new Date(g.created * 1000).toLocaleString()}
+          {lines > 1 ? ` / ${lines} lines` : ""}
+          {g.seed != null ? ` / seed ${g.seed}` : ""} / {new Date(g.created * 1000).toLocaleString()}
         </span>
         <button
           type="button"
@@ -57,6 +60,9 @@ function GenerationCard({ generation: g, onDelete, format, setFormat }: CardProp
           <a className="button" href={generationAudioUrl(g.id, format, true)} download={`${g.id}.${format}`}>
             Download
           </a>
+          <button type="button" onClick={() => onReuse(g)} title="Load this entry's settings and seed into Generate">
+            Reuse
+          </button>
           <button className="danger" onClick={() => onDelete(g.id)}>
             Delete
           </button>
@@ -66,7 +72,7 @@ function GenerationCard({ generation: g, onDelete, format, setFormat }: CardProp
   );
 }
 
-export default function HistoryTab({ generations, refreshGenerations, setError }: Props) {
+export default function HistoryTab({ generations, onReuse, refreshGenerations, setError }: Props) {
   const [format, setFormat] = useExportFormat();
   async function onDelete(id: string) {
     setError("");
@@ -84,7 +90,7 @@ export default function HistoryTab({ generations, refreshGenerations, setError }
       <ul className="gens-list">
         {generations.length === 0 && <li className="hint">Nothing here yet. Clips you generate with "Keep in History" on show up here.</li>}
         {generations.map((g) => (
-          <GenerationCard key={g.id} generation={g} onDelete={onDelete} format={format} setFormat={setFormat} />
+          <GenerationCard key={g.id} generation={g} onDelete={onDelete} onReuse={onReuse} format={format} setFormat={setFormat} />
         ))}
       </ul>
     </section>

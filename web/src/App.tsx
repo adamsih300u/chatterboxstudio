@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import GenerateTab from "./GenerateTab";
+import type { Reuse } from "./GenerateTab";
+import type { ParamValues } from "./AdvancedParams";
 import HistoryTab from "./HistoryTab";
 import VoicesTab from "./VoicesTab";
 import { errorMessage, getGenerations, getModels, getVoices, loadModel } from "./api";
@@ -27,6 +29,7 @@ export default function App() {
   const [builtinHidden, setBuiltinHidden] = useState(false);
   const [generations, setGenerations] = useState<GenerationOut[]>([]);
   const [error, setError] = useState("");
+  const [reuse, setReuse] = useState<Reuse | null>(null);
 
   const anyLoading = models.some((m) => m.state === "loading");
 
@@ -74,6 +77,16 @@ export default function App() {
     }
   }
 
+  // History's "Reuse" loads an entry's settings and seed into Generate and switches to it.
+  function onReuse(g: GenerationOut) {
+    const single = (g.segments?.length ?? 0) <= 1;
+    const voice = single ? voices.find((v) => v.name === g.voice)?.id ?? "" : undefined;
+    setReuse({ nonce: Date.now(), text: single ? g.text : undefined, model: g.model, voice, params: g.params as ParamValues, seed: g.seed });
+    setModel(g.model);
+    window.location.hash = "generate";
+    setTab("generate");
+  }
+
   return (
     <main>
       <h1>Chatterbox Studio</h1>
@@ -110,11 +123,12 @@ export default function App() {
           refreshModels={refreshModels}
           refreshGenerations={refreshGenerations}
           setError={setError}
+          reuse={reuse}
         />
       </div>
       {tab === "voices" && <VoicesTab model={model} voices={voices} defaultVoice={defaultVoice} builtinHidden={builtinHidden} refreshVoices={refreshVoices} setError={setError} />}
       {tab === "history" && (
-        <HistoryTab generations={generations} refreshGenerations={refreshGenerations} setError={setError} />
+        <HistoryTab generations={generations} refreshGenerations={refreshGenerations} setError={setError} onReuse={onReuse} />
       )}
     </main>
   );

@@ -36,10 +36,10 @@ class StubEngine:
         self._loaded.add(variant)
         return "loading"
 
-    def synthesize(self, variant, text, ref_path=None, language="en", params=None):
+    def synthesize(self, variant, text, ref_path=None, language="en", params=None, seed=None):
         self._loaded.add(variant)
         self.calls.append(
-            {"variant": variant, "text": text, "ref": ref_path, "language": language, "params": params or {}}
+            {"variant": variant, "text": text, "ref": ref_path, "language": language, "params": params or {}, "seed": seed}
         )
         return np.zeros(2400, dtype=np.float32), 24000
 

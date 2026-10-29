@@ -246,6 +246,17 @@
             "title": "Params",
             "type": "object"
           },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
           "segments": {
             "items": {
               "$ref": "#/components/schemas/SegmentOut"
@@ -602,6 +613,19 @@
             "title": "Response Format",
             "type": "string"
           },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 4294967295.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
           "speed": {
             "default": 1.0,
             "exclusiveMinimum": 0.0,
@@ -666,6 +690,19 @@
             "default": false,
             "title": "Save",
             "type": "boolean"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 4294967295.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
           },
           "segments": {
             "anyOf": [

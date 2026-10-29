@@ -19,7 +19,18 @@ const LANGUAGES = [
 
 const VOICE_TAG = /\{[^{}\n]{1,64}\}/;
 
+// Settings handed over from History's "Reuse"; nonce changes on every click so the same entry can be reused again.
+export interface Reuse {
+  nonce: number;
+  text?: string;
+  model: string;
+  voice?: string;
+  params: ParamValues;
+  seed?: number | null;
+}
+
 interface Props {
+  reuse?: Reuse | null;
   models: ModelInfo[];
   model: string;
   setModel: (id: string) => void;
@@ -32,7 +43,7 @@ interface Props {
   setError: (message: string) => void;
 }
 
-export default function GenerateTab({ models, model, setModel, voices, defaultVoice, builtinHidden, onLoadModel, refreshModels, refreshGenerations, setError }: Props) {
+export default function GenerateTab({ reuse, models, model, setModel, voices, defaultVoice, builtinHidden, onLoadModel, refreshModels, refreshGenerations, setError }: Props) {
   const [text, setText] = useState("");
   const [voice, setVoice] = useState("");
   const [language, setLanguage] = useState("en");
@@ -46,6 +57,17 @@ export default function GenerateTab({ models, model, setModel, voices, defaultVo
   const [format, setFormat] = useExportFormat();
   const [converting, setConverting] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Empty means a random take each time; a number repeats that take for the same text and settings.
+  const [seedText, setSeedText] = useState("");
+  const [lastSeed, setLastSeed] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!reuse) return;
+    if (reuse.text !== undefined) setText(reuse.text);
+    if (reuse.voice !== undefined) setVoice(reuse.voice);
+    setOverrides((o) => ({ ...o, [reuse.model]: reuse.params || {} }));
+    setSeedText(reuse.seed != null ? String(reuse.seed) : "");
+  }, [reuse?.nonce]);
 
   // Follow the saved default whenever it changes (it loads after first render).
   useEffect(() => {
@@ -68,7 +90,9 @@ export default function GenerateTab({ models, model, setModel, voices, defaultVo
     setError("");
     setBusy(true);
     try {
-      const { blob, duration } = await synthesize({ text, voice, model, language, params: values, pauseMs, save: keep });
+      const wanted = /^\d+$/.test(seedText.trim()) ? Number(seedText.trim()) : null;
+      const { blob, duration, seed } = await synthesize({ text, voice, model, language, params: values, pauseMs, save: keep, seed: wanted });
+      setLastSeed(seed);
       setAudioUrl((old) => {
         if (old) URL.revokeObjectURL(old);
         return URL.createObjectURL(blob);
@@ -180,6 +204,23 @@ export default function GenerateTab({ models, model, setModel, voices, defaultVo
           <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />
           Keep in History
         </label>
+        <label className="inline">
+          Seed
+          <input
+            type="text"
+            inputMode="numeric"
+            className="seed"
+            placeholder="random"
+            value={seedText}
+            onChange={(e) => setSeedText(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            title="Leave empty for a new take each time. A number repeats the same take for the same text, voice and settings."
+          />
+        </label>
+        {lastSeed !== null && String(lastSeed) !== seedText && (
+          <button type="button" onClick={() => setSeedText(String(lastSeed))} title="Lock the seed so the next run repeats this take">
+            Use seed {lastSeed}
+          </button>
+        )}
       </div>
       {audioUrl && (
         <div className="player">

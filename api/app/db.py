@@ -5,7 +5,7 @@ from typing import Iterator, Optional
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import JSON, Float, String, Text, create_engine, event
+from sqlalchemy import JSON, Float, Integer, String, Text, create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -39,6 +39,8 @@ class GenerationRow(Base):
     created: Mapped[float] = mapped_column(Float, index=True)
     segments: Mapped[list] = mapped_column(JSON, default=list)
     params: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Sampling seed the clip was generated with; None for clips saved before seeds existed.
+    seed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
 
 class SettingRow(Base):
