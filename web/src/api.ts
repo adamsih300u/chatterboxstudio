@@ -6,6 +6,7 @@ export type ModelInfo = Schemas["ModelInfo"];
 export type ModelList = Schemas["ModelList"];
 export type LoadStarted = Schemas["LoadStarted"];
 export type VoiceOut = Schemas["VoiceOut"];
+export type Region = Schemas["Region"];
 export type VoiceList = Schemas["VoiceList"];
 export type DefaultVoiceOut = Schemas["DefaultVoiceOut"];
 export type BuiltinOut = Schemas["BuiltinOut"];
@@ -67,11 +68,44 @@ export async function setBuiltinHidden(hidden: boolean): Promise<BuiltinOut> {
   );
 }
 
-export async function addVoice(name: string, file: Blob): Promise<VoiceOut> {
+// `file` is the clip used for cloning. Pass the untrimmed upload as `original` and the cut as
+// `regions` to keep the voice re-trimmable.
+export async function addVoice(name: string, file: Blob, original?: File, regions: Region[] = []): Promise<VoiceOut> {
   const body = new FormData();
   body.append("name", name);
   body.append("file", file);
+  if (original) body.append("original", original);
+  body.append("regions", JSON.stringify(regions));
   return json(await fetch("/api/voices", { method: "POST", body }));
+}
+
+// Replace a voice's clip. The server keeps the stored original unless one is given.
+export async function updateVoice(id: string, file: Blob, regions: Region[]): Promise<VoiceOut> {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("regions", JSON.stringify(regions));
+  return json(await fetch(`/api/voices/${encodeURIComponent(id)}`, { method: "PUT", body }));
+}
+
+// The untrimmed upload (or the clip itself for voices saved without one).
+export async function getVoiceSource(id: string): Promise<Blob> {
+  return (await check(await fetch(`/api/voices/${encodeURIComponent(id)}/source`))).blob();
+}
+
+export function voiceExportUrl(id: string): string {
+  return `/api/voices/${encodeURIComponent(id)}/export`;
+}
+
+// Speak the fixed preview sentence; `cached` is true when the server reused an earlier render.
+export async function previewVoice(id: string, model?: string | null): Promise<{ blob: Blob; cached: boolean }> {
+  const res = await check(
+    await fetch(`/api/voices/${encodeURIComponent(id)}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: model || null }),
+    })
+  );
+  return { blob: await res.blob(), cached: res.headers.get("X-Preview-Cached") === "true" };
 }
 
 export async function deleteVoice(id: string): Promise<void> {

@@ -21,6 +21,11 @@ class VoiceRow(Base):
     name: Mapped[str] = mapped_column(String(64))
     created: Mapped[float] = mapped_column(Float)
     filename: Mapped[str] = mapped_column(String(32))
+    # Untrimmed upload kept so the clip can be re-trimmed later; "" for voices saved before this existed.
+    original: Mapped[str] = mapped_column(String(32), default="", server_default="")
+    # Keep-regions [{start, end}] in seconds of the original, as last saved from the clip editor.
+    regions: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
+    updated: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
 
 
 class GenerationRow(Base):

@@ -1,12 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  clampView,
   encodeWav,
   joinRegions,
+  MIN_VIEW_S,
   normalizeRegions,
+  panView,
   peaks,
   resultToSourceTime,
   totalDuration,
+  zoomView,
 } from "./audioEdit.js";
 
 test("normalizeRegions clamps, drops slivers, sorts and merges", () => {
@@ -74,4 +78,28 @@ test("encodeWav writes a valid mono 16-bit header", () => {
 test("peaks returns min/max per bucket", () => {
   const p = peaks(new Float32Array([0.2, -0.4, 0.9, -0.1]), 2);
   assert.deepEqual([...p].map((x) => +x.toFixed(2)), [-0.4, 0.2, -0.1, 0.9]);
+});
+
+test("zoomView keeps the time under the cursor fixed", () => {
+  const full = { start: 0, span: 10 };
+  const z = zoomView(full, 10, 0.25, 2);
+  assert.deepEqual(z, { start: 1.25, span: 5 });
+  assert.equal(z.start + 0.25 * z.span, 2.5); // 2.5 s was under 25% of the full view
+  const again = zoomView(z, 10, 0.5, 2);
+  assert.equal(again.start + 0.5 * again.span, z.start + 0.5 * z.span);
+});
+
+test("zoomView stays inside the clip and above the minimum span", () => {
+  assert.deepEqual(zoomView({ start: 0, span: 10 }, 10, 0.5, 0.5), { start: 0, span: 10 }); // cannot zoom out past full
+  const deep = zoomView({ start: 4, span: 0.3 }, 10, 0.5, 100);
+  assert.equal(deep.span, MIN_VIEW_S);
+  const edge = zoomView({ start: 0, span: 10 }, 10, 1, 4);
+  assert.deepEqual(edge, { start: 7.5, span: 2.5 });
+});
+
+test("panView and clampView clamp to the clip", () => {
+  assert.deepEqual(panView({ start: 2, span: 4 }, 10, 100), { start: 6, span: 4 });
+  assert.deepEqual(panView({ start: 2, span: 4 }, 10, -100), { start: 0, span: 4 });
+  assert.deepEqual(clampView({ start: -3, span: 99 }, 10), { start: 0, span: 10 });
+  assert.deepEqual(clampView({ start: 0, span: 1 }, 0.1), { start: 0, span: 0.1 }); // clip shorter than the minimum
 });

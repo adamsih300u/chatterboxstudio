@@ -103,6 +103,27 @@ export function peaks(samples, buckets) {
   return out;
 }
 
+// The visible window of the waveform is { start, span }, both in seconds of the source.
+export const MIN_VIEW_S = 0.25;
+
+// Keep the window inside [0, duration] and no narrower than MIN_VIEW_S.
+export function clampView(view, duration) {
+  const span = Math.min(duration, Math.max(Math.min(MIN_VIEW_S, duration), view.span));
+  const start = Math.max(0, Math.min(duration - span, view.start));
+  return { start, span };
+}
+
+// Zoom by `factor` (above 1 zooms in) keeping the time under `anchor` (0 to 1 across the window) fixed.
+export function zoomView(view, duration, anchor, factor) {
+  const t = view.start + anchor * view.span;
+  const span = view.span / factor;
+  return clampView({ start: t - anchor * span, span }, duration);
+}
+
+export function panView(view, duration, deltaS) {
+  return clampView({ start: view.start + deltaS, span: view.span }, duration);
+}
+
 export function lengthWarning(seconds) {
   if (seconds <= 0) return "";
   if (seconds < 5) return "Under about 5 seconds is short for cloning.";

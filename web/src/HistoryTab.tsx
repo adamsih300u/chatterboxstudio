@@ -25,29 +25,37 @@ export default function HistoryTab({ generations, refreshGenerations, setError }
 
   return (
     <section>
-      <p className="hint">Hover a line to see the full text that produced it.</p>
-      <ul className="voices gens">
+      <p className="hint">Click "Show full script" on an entry to read everything that was sent to the model.</p>
+      <ul className="gens-list">
         {generations.length === 0 && <li className="hint">Nothing here yet. Clips you generate with "Keep in History" on show up here.</li>}
         {generations.map((g) => {
           const url = `/api/generations/${encodeURIComponent(g.id)}/audio`;
           const extra = describeParams(g.params);
+          const lines = g.segments?.length ?? 0;
           return (
-            <li key={g.id}>
-              <span className="gen-text" title={extra ? `${g.text}\n\n${extra}` : g.text}>
-                {g.text}
-              </span>
-              <span className="gen-meta">
-                {g.model}
-                {g.voice ? ` / ${g.voice}` : ""}
-                {(g.segments?.length ?? 0) > 1 ? ` / ${g.segments?.length} lines` : ""} / {new Date(g.created * 1000).toLocaleString()}
-              </span>
+            <li key={g.id} className="gen-card">
+              <div className="gen-head">
+                <span className="gen-meta">
+                  {g.model}
+                  {g.voice ? ` / ${g.voice}` : ""}
+                  {lines > 1 ? ` / ${lines} lines` : ""} / {new Date(g.created * 1000).toLocaleString()}
+                </span>
+                <a href={url} download={`${g.id}.wav`}>
+                  Download
+                </a>
+                <button className="danger" onClick={() => onDelete(g.id)}>
+                  Delete
+                </button>
+              </div>
+              <p className="gen-preview">{g.text}</p>
               <audio controls preload="none" src={url} />
-              <a href={url} download={`${g.id}.wav`}>
-                Download
-              </a>
-              <button className="danger" onClick={() => onDelete(g.id)}>
-                Delete
-              </button>
+              <details className="gen-script">
+                <summary>Show full script</summary>
+                <pre className="gen-full" tabIndex={0}>
+                  {g.text}
+                </pre>
+                {extra && <p className="hint">Settings: {extra}</p>}
+              </details>
             </li>
           );
         })}

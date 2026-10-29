@@ -112,7 +112,7 @@ export default function App() {
           setError={setError}
         />
       </div>
-      {tab === "voices" && <VoicesTab voices={voices} defaultVoice={defaultVoice} builtinHidden={builtinHidden} refreshVoices={refreshVoices} setError={setError} />}
+      {tab === "voices" && <VoicesTab model={model} voices={voices} defaultVoice={defaultVoice} builtinHidden={builtinHidden} refreshVoices={refreshVoices} setError={setError} />}
       {tab === "history" && (
         <HistoryTab generations={generations} refreshGenerations={refreshGenerations} setError={setError} />
       )}

@@ -12,4 +12,13 @@ export function joinRegions(samples: Float32Array<ArrayBuffer>, rate: number, re
 export function resultToSourceTime(regions: Region[], t: number): number;
 export function encodeWav(samples: Float32Array<ArrayBuffer>, rate: number): ArrayBuffer;
 export function peaks(samples: Float32Array<ArrayBuffer>, buckets: number): Float32Array<ArrayBuffer>;
+export interface View {
+  start: number;
+  span: number;
+}
+
+export const MIN_VIEW_S: number;
+export function clampView(view: View, duration: number): View;
+export function zoomView(view: View, duration: number, anchor: number, factor: number): View;
+export function panView(view: View, duration: number, deltaS: number): View;
 export function lengthWarning(seconds: number): string;

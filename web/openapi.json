@@ -47,6 +47,23 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "original": {
+            "anyOf": [
+              {
+                "format": "binary",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original"
+          },
+          "regions": {
+            "default": "[]",
+            "title": "Regions",
+            "type": "string"
           }
         },
         "required": [
@@ -54,6 +71,37 @@
           "file"
         ],
         "title": "Body_add_voice_api_voices_post",
+        "type": "object"
+      },
+      "Body_update_voice_api_voices__voice_id__put": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          },
+          "original": {
+            "anyOf": [
+              {
+                "format": "binary",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original"
+          },
+          "regions": {
+            "default": "[]",
+            "title": "Regions",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_update_voice_api_voices__voice_id__put",
         "type": "object"
       },
       "BuiltinOut": {
@@ -383,6 +431,58 @@
         "title": "ParamSpec",
         "type": "object"
       },
+      "PreviewRequest": {
+        "properties": {
+          "language": {
+            "default": "en",
+            "maxLength": 16,
+            "minLength": 2,
+            "title": "Language",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "params": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "title": "PreviewRequest",
+        "type": "object"
+      },
+      "Region": {
+        "description": "A keep-region of a voice's original upload, in seconds.",
+        "properties": {
+          "end": {
+            "minimum": 0.0,
+            "title": "End",
+            "type": "number"
+          },
+          "start": {
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "Region",
+        "type": "object"
+      },
       "Segment": {
         "properties": {
           "text": {
@@ -635,6 +735,10 @@
             "title": "Created",
             "type": "number"
           },
+          "has_original": {
+            "title": "Has Original",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -642,12 +746,26 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "regions": {
+            "items": {
+              "$ref": "#/components/schemas/Region"
+            },
+            "title": "Regions",
+            "type": "array"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "number"
           }
         },
         "required": [
           "id",
           "name",
-          "created"
+          "created",
+          "updated",
+          "regions",
+          "has_original"
         ],
         "title": "VoiceOut",
         "type": "object"
@@ -912,6 +1030,7 @@
         "summary": "List Voices"
       },
       "post": {
+        "description": "`file` is the clip used for cloning. `original` (the untrimmed upload) and `regions`\n(how it was cut) are optional and let the clip be re-trimmed later.",
         "operationId": "add_voice_api_voices_post",
         "requestBody": {
           "content": {
@@ -1054,6 +1173,54 @@
           }
         },
         "summary": "Delete Voice"
+      },
+      "put": {
+        "description": "Replace a voice's clip, keeping its name. Previews of the old clip are discarded.",
+        "operationId": "update_voice_api_voices__voice_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_update_voice_api_voices__voice_id__put"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Voice"
       }
     },
     "/api/voices/{voice_id}/audio": {
@@ -1091,6 +1258,130 @@
           }
         },
         "summary": "Voice Audio"
+      }
+    },
+    "/api/voices/{voice_id}/export": {
+      "get": {
+        "description": "The trimmed clip as a download; upload it to another instance to import the voice.",
+        "operationId": "voice_export_api_voices__voice_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Voice Export"
+      }
+    },
+    "/api/voices/{voice_id}/preview": {
+      "post": {
+        "description": "Speak a fixed sentence in this voice. Cached until the clip, model, language,\nparameters or sentence change.",
+        "operationId": "voice_preview_api_voices__voice_id__preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Voice Preview"
+      }
+    },
+    "/api/voices/{voice_id}/source": {
+      "get": {
+        "description": "The untrimmed upload for re-trimming (the clip itself for voices saved without one).",
+        "operationId": "voice_source_api_voices__voice_id__source_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Voice Source"
       }
     },
     "/v1/audio/speech": {

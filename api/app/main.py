@@ -1,10 +1,12 @@
+import hashlib
+import json
 from pathlib import Path
 from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, model_validator
 
 from .audio import cut_at_fraction, stitch, to_wav_bytes
 from .config import get_settings
@@ -13,10 +15,11 @@ from .generations import GenerationStore
 from .legacy import import_legacy
 from .models import PARAM_SPECS, VARIANTS, ModelManager, clean_params, configure_threads, resolve_variant
 from .script import parse_script_plan
-from .voices import VoiceError, VoiceStore
+from .voices import VoiceError, VoiceNotFound, VoiceStore
 
 NO_VOICE = {"", "default", "none"}
 MAX_SEGMENTS = 50
+MAX_REGIONS = 100
 
 
 VoiceRef = Field(default=None, max_length=64)
@@ -60,10 +63,45 @@ class SpeechRequest(BaseModel):
     params: dict[str, Any] = {}
 
 
+class Region(BaseModel):
+    """A keep-region of a voice's original upload, in seconds."""
+
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        if self.end <= self.start:
+            raise ValueError("region end must be after its start")
+        return self
+
+
+REGIONS = TypeAdapter(list[Region])
+
+
+def parse_regions(raw: str) -> list[dict]:
+    try:
+        regions = REGIONS.validate_json(raw or "[]")
+    except ValidationError as e:
+        raise HTTPException(400, f"invalid regions: {e.errors()[0]['msg']}")
+    if len(regions) > MAX_REGIONS:
+        raise HTTPException(400, f"at most {MAX_REGIONS} regions")
+    return [r.model_dump() for r in regions]
+
+
+class PreviewRequest(BaseModel):
+    model: Optional[str] = Field(default=None, max_length=64)
+    language: str = Field(default="en", min_length=2, max_length=16)
+    params: dict[str, Any] = {}
+
+
 class VoiceOut(BaseModel):
     id: str
     name: str
     created: float
+    updated: float
+    regions: list[Region]
+    has_original: bool
 
 
 class VoiceList(BaseModel):
@@ -270,22 +308,97 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         except VoiceError as e:
             raise HTTPException(404, str(e))
 
-    @app.post("/api/voices", status_code=201, response_model=VoiceOut)
-    async def add_voice(name: str = Form(..., min_length=1, max_length=64), file: UploadFile = File(...)):
-        data = await file.read(settings.max_upload_bytes + 1)
+    async def read_upload(upload: UploadFile) -> bytes:
+        data = await upload.read(settings.max_upload_bytes + 1)
         if len(data) > settings.max_upload_bytes:
             raise HTTPException(413, "upload too large")
+        return data
+
+    @app.post("/api/voices", status_code=201, response_model=VoiceOut)
+    async def add_voice(
+        name: str = Form(..., min_length=1, max_length=64),
+        file: UploadFile = File(...),
+        original: Optional[UploadFile] = File(None),
+        regions: str = Form("[]"),
+    ):
+        """`file` is the clip used for cloning. `original` (the untrimmed upload) and `regions`
+        (how it was cut) are optional and let the clip be re-trimmed later."""
+        keep = parse_regions(regions)
+        data = await read_upload(file)
+        orig = await read_upload(original) if original else None
         try:
-            return store.add(name, data, file.filename or "").public()
+            return store.add(
+                name, data, file.filename or "", original=orig,
+                original_filename=(original.filename or "") if original else "", regions=keep,
+            ).public()
         except VoiceError as e:
             raise HTTPException(400, str(e))
 
-    @app.get("/api/voices/{voice_id}/audio")
-    def voice_audio(voice_id: str):
+    @app.put("/api/voices/{voice_id}", response_model=VoiceOut)
+    async def update_voice(
+        voice_id: str,
+        file: UploadFile = File(...),
+        original: Optional[UploadFile] = File(None),
+        regions: str = Form("[]"),
+    ):
+        """Replace a voice's clip, keeping its name. Previews of the old clip are discarded."""
+        keep = parse_regions(regions)
+        data = await read_upload(file)
+        orig = await read_upload(original) if original else None
+        try:
+            return store.update(
+                voice_id, data, file.filename or "", regions=keep, original=orig,
+                original_filename=(original.filename or "") if original else "",
+            ).public()
+        except VoiceNotFound as e:
+            raise HTTPException(404, str(e))
+        except VoiceError as e:
+            raise HTTPException(400, str(e))
+
+    def find_voice(voice_id: str):
         voice = store.get(voice_id)
         if voice is None:
             raise HTTPException(404, "voice not found")
-        return FileResponse(voice.path)
+        return voice
+
+    @app.get("/api/voices/{voice_id}/audio")
+    def voice_audio(voice_id: str):
+        return FileResponse(find_voice(voice_id).path)
+
+    @app.get("/api/voices/{voice_id}/source")
+    def voice_source(voice_id: str):
+        """The untrimmed upload for re-trimming (the clip itself for voices saved without one)."""
+        return FileResponse(find_voice(voice_id).source_path)
+
+    @app.get("/api/voices/{voice_id}/export")
+    def voice_export(voice_id: str):
+        """The trimmed clip as a download; upload it to another instance to import the voice."""
+        voice = find_voice(voice_id)
+        return FileResponse(voice.path, filename=f"{voice.id}{voice.path.suffix}")
+
+    @app.post("/api/voices/{voice_id}/preview")
+    def voice_preview(voice_id: str, req: PreviewRequest):
+        """Speak a fixed sentence in this voice. Cached until the clip, model, language,
+        parameters or sentence change."""
+        voice = find_voice(voice_id)
+        try:
+            variant = resolve_variant(req.model, settings.default_variant)
+            clean = clean_params(variant, req.params)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        language = req.language if VARIANTS[variant]["multilingual"] else ""
+        key = hashlib.sha256(
+            json.dumps(
+                [store.clip_digest(voice), variant, language, clean, settings.preview_text],
+                sort_keys=True, default=str,
+            ).encode()
+        ).hexdigest()[:32]
+        cached = store.preview_path(voice, key)
+        if cached.is_file():
+            return Response(cached.read_bytes(), media_type="audio/wav", headers={"X-Preview-Cached": "true"})
+        wav, _, _ = render(variant, [(settings.preview_text, voice.id)], req.language, req.params)
+        store.save_preview(voice, key, wav)
+        return Response(wav, media_type="audio/wav", headers={"X-Preview-Cached": "false"})
 
     @app.delete("/api/voices/{voice_id}", status_code=204)
     def delete_voice(voice_id: str):

@@ -134,7 +134,11 @@ export interface paths {
         /** List Voices */
         get: operations["list_voices_api_voices_get"];
         put?: never;
-        /** Add Voice */
+        /**
+         * Add Voice
+         * @description `file` is the clip used for cloning. `original` (the untrimmed upload) and `regions`
+         *     (how it was cut) are optional and let the clip be re-trimmed later.
+         */
         post: operations["add_voice_api_voices_post"];
         delete?: never;
         options?: never;
@@ -184,7 +188,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /**
+         * Update Voice
+         * @description Replace a voice's clip, keeping its name. Previews of the old clip are discarded.
+         */
+        put: operations["update_voice_api_voices__voice_id__put"];
         post?: never;
         /** Delete Voice */
         delete: operations["delete_voice_api_voices__voice_id__delete"];
@@ -202,6 +210,67 @@ export interface paths {
         };
         /** Voice Audio */
         get: operations["voice_audio_api_voices__voice_id__audio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voices/{voice_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Voice Export
+         * @description The trimmed clip as a download; upload it to another instance to import the voice.
+         */
+        get: operations["voice_export_api_voices__voice_id__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voices/{voice_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Voice Preview
+         * @description Speak a fixed sentence in this voice. Cached until the clip, model, language,
+         *     parameters or sentence change.
+         */
+        post: operations["voice_preview_api_voices__voice_id__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voices/{voice_id}/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Voice Source
+         * @description The untrimmed upload for re-trimming (the clip itself for voices saved without one).
+         */
+        get: operations["voice_source_api_voices__voice_id__source_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -265,6 +334,28 @@ export interface components {
             file: string;
             /** Name */
             name: string;
+            /** Original */
+            original?: string | null;
+            /**
+             * Regions
+             * @default []
+             */
+            regions: string;
+        };
+        /** Body_update_voice_api_voices__voice_id__put */
+        Body_update_voice_api_voices__voice_id__put: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /** Original */
+            original?: string | null;
+            /**
+             * Regions
+             * @default []
+             */
+            regions: string;
         };
         /** BuiltinOut */
         BuiltinOut: {
@@ -384,6 +475,33 @@ export interface components {
              */
             type: "float" | "int" | "bool";
         };
+        /** PreviewRequest */
+        PreviewRequest: {
+            /**
+             * Language
+             * @default en
+             */
+            language: string;
+            /** Model */
+            model?: string | null;
+            /**
+             * Params
+             * @default {}
+             */
+            params: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * Region
+         * @description A keep-region of a voice's original upload, in seconds.
+         */
+        Region: {
+            /** End */
+            end: number;
+            /** Start */
+            start: number;
+        };
         /** Segment */
         Segment: {
             /** Text */
@@ -490,10 +608,16 @@ export interface components {
         VoiceOut: {
             /** Created */
             created: number;
+            /** Has Original */
+            has_original: boolean;
             /** Id */
             id: string;
             /** Name */
             name: string;
+            /** Regions */
+            regions: components["schemas"]["Region"][];
+            /** Updated */
+            updated: number;
         };
     };
     responses: never;
@@ -840,6 +964,41 @@ export interface operations {
             };
         };
     };
+    update_voice_api_voices__voice_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_update_voice_api_voices__voice_id__put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_voice_api_voices__voice_id__delete: {
         parameters: {
             query?: never;
@@ -870,6 +1029,103 @@ export interface operations {
         };
     };
     voice_audio_api_voices__voice_id__audio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    voice_export_api_voices__voice_id__export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    voice_preview_api_voices__voice_id__preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    voice_source_api_voices__voice_id__source_get: {
         parameters: {
             query?: never;
             header?: never;

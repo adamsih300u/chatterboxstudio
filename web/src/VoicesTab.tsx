@@ -1,12 +1,23 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { addVoice, deleteVoice, errorMessage, setBuiltinHidden, setDefaultVoice } from "./api";
+import {
+  addVoice,
+  deleteVoice,
+  errorMessage,
+  getVoiceSource,
+  previewVoice,
+  setBuiltinHidden,
+  setDefaultVoice,
+  updateVoice,
+  voiceExportUrl,
+} from "./api";
 import type { VoiceOut } from "./api";
 import ClipEditor from "./ClipEditor";
 import type { ClipEdit } from "./ClipEditor";
 import { encodeWav, joinRegions } from "./audioEdit.js";
 
 interface Props {
+  model: string;
   voices: VoiceOut[];
   defaultVoice: string;
   builtinHidden: boolean;
@@ -14,23 +25,51 @@ interface Props {
   setError: (message: string) => void;
 }
 
-export default function VoicesTab({ voices, defaultVoice, builtinHidden, refreshVoices, setError }: Props) {
+interface Preview {
+  busy: boolean;
+  url?: string;
+  cached?: boolean;
+}
+
+interface Editing {
+  voice: VoiceOut;
+  source: File | null; // null while the source loads
+}
+
+// The kept parts joined into a wav; with no regions, the whole decoded clip.
+function clipFrom(edit: ClipEdit): File {
+  const regions = edit.regions.length ? edit.regions : [{ start: 0, end: edit.samples.length / edit.rate }];
+  const wav = encodeWav(joinRegions(edit.samples, edit.rate, regions), edit.rate);
+  return new File([wav], "clip.wav", { type: "audio/wav" });
+}
+
+export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, refreshVoices, setError }: Props) {
   const [name, setName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [edit, setEdit] = useState<ClipEdit | null>(null);
+  const [previews, setPreviews] = useState<Record<string, Preview>>({});
+  const previewUrls = useRef<Set<string>>(new Set());
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [reEdit, setReEdit] = useState<ClipEdit | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const urls = previewUrls.current;
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+  }, []);
 
   async function onSave(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!file || !name.trim()) return;
     setError("");
     try {
-      let upload: Blob = file;
       if (edit && edit.regions.length) {
-        const wav = encodeWav(joinRegions(edit.samples, edit.rate, edit.regions), edit.rate);
-        upload = new File([wav], "clip.wav", { type: "audio/wav" });
+        // Keep the untrimmed upload and the cut so the voice can be re-trimmed later.
+        await addVoice(name.trim(), clipFrom(edit), file, edit.regions);
+      } else {
+        await addVoice(name.trim(), file);
       }
-      await addVoice(name.trim(), upload);
       setName("");
       setFile(null);
       setEdit(null);
@@ -65,9 +104,73 @@ export default function VoicesTab({ voices, defaultVoice, builtinHidden, refresh
     setError("");
     try {
       await deleteVoice(id);
+      dropPreview(id);
+      if (editing?.voice.id === id) setEditing(null);
       await refreshVoices();
     } catch (err) {
       setError(errorMessage(err));
+    }
+  }
+
+  function dropPreview(id: string) {
+    setPreviews((prev) => {
+      const { [id]: gone, ...rest } = prev;
+      if (gone?.url) {
+        URL.revokeObjectURL(gone.url);
+        previewUrls.current.delete(gone.url);
+      }
+      return rest;
+    });
+  }
+
+  async function onPreview(id: string) {
+    setError("");
+    setPreviews((prev) => ({ ...prev, [id]: { ...prev[id], busy: true } }));
+    try {
+      const { blob, cached } = await previewVoice(id, model);
+      const url = URL.createObjectURL(blob);
+      previewUrls.current.add(url);
+      setPreviews((prev) => {
+        const old = prev[id]?.url;
+        if (old) {
+          URL.revokeObjectURL(old);
+          previewUrls.current.delete(old);
+        }
+        return { ...prev, [id]: { busy: false, url, cached } };
+      });
+    } catch (err) {
+      setPreviews((prev) => ({ ...prev, [id]: { ...prev[id], busy: false } }));
+      setError(errorMessage(err));
+    }
+  }
+
+  async function onEdit(voice: VoiceOut) {
+    setError("");
+    setReEdit(null);
+    setEditing({ voice, source: null });
+    try {
+      const blob = await getVoiceSource(voice.id);
+      setEditing({ voice, source: new File([blob], voice.id) });
+    } catch (err) {
+      setEditing(null);
+      setError(errorMessage(err));
+    }
+  }
+
+  async function onSaveEdit() {
+    if (!editing || !reEdit) return;
+    setError("");
+    setSaving(true);
+    try {
+      await updateVoice(editing.voice.id, clipFrom(reEdit), reEdit.regions);
+      dropPreview(editing.voice.id);
+      setEditing(null);
+      setReEdit(null);
+      await refreshVoices();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -82,6 +185,28 @@ export default function VoicesTab({ voices, defaultVoice, builtinHidden, refresh
       </form>
       {file && <ClipEditor file={file} onChange={setEdit} />}
       <p className="hint">Upload a clean 5 to 15 second reference clip of a single speaker. Saved voices appear in the Generate tab. The default voice is preselected there.</p>
+
+      {editing && (
+        <div className="edit-card">
+          <strong>Re-trimming {editing.voice.name}</strong>
+          {!editing.source && <p className="hint">Loading the original...</p>}
+          {editing.source && (
+            <ClipEditor file={editing.source} initialRegions={editing.voice.regions} onChange={setReEdit} />
+          )}
+          {editing.source && !editing.voice.has_original && (
+            <p className="hint">This voice was saved before originals were kept, so you are editing its current clip. Saving keeps that clip as the original from now on.</p>
+          )}
+          <div className="row">
+            <button type="button" onClick={onSaveEdit} disabled={!reEdit || saving}>
+              {saving ? "Saving..." : "Save changes"}
+            </button>
+            <button type="button" onClick={() => setEditing(null)} disabled={saving}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <ul className="voices">
         <li>
           <span>
@@ -95,21 +220,39 @@ export default function VoicesTab({ voices, defaultVoice, builtinHidden, refresh
           <button onClick={onToggleBuiltin}>{builtinHidden ? "Show" : "Hide"}</button>
         </li>
         {voices.length === 0 && <li className="hint">No saved voices yet.</li>}
-        {voices.map((v) => (
-          <li key={v.id}>
-            <span>
-              {v.name}
-              {v.id === defaultVoice && <strong className="badge"> (default)</strong>}
-            </span>
-            <audio controls preload="none" src={`/api/voices/${encodeURIComponent(v.id)}/audio`} />
-            <button onClick={() => onDefault(v.id === defaultVoice ? null : v.id)}>
-              {v.id === defaultVoice ? "Clear default" : "Set default"}
-            </button>
-            <button className="danger" onClick={() => onDelete(v.id)}>
-              Delete
-            </button>
-          </li>
-        ))}
+        {voices.map((v) => {
+          const preview = previews[v.id];
+          return (
+            <li key={v.id}>
+              <span>
+                {v.name}
+                {v.id === defaultVoice && <strong className="badge"> (default)</strong>}
+              </span>
+              <audio controls preload="none" src={`/api/voices/${encodeURIComponent(v.id)}/audio?v=${v.updated}`} />
+              <button onClick={() => onPreview(v.id)} disabled={preview?.busy} title="Speak a sample sentence in this voice with the selected model">
+                {preview?.busy ? "Rendering..." : "Preview"}
+              </button>
+              <button onClick={() => onEdit(v)} disabled={editing?.voice.id === v.id}>
+                Edit
+              </button>
+              <a className="button" href={voiceExportUrl(v.id)} download>
+                Export
+              </a>
+              <button onClick={() => onDefault(v.id === defaultVoice ? null : v.id)}>
+                {v.id === defaultVoice ? "Clear default" : "Set default"}
+              </button>
+              <button className="danger" onClick={() => onDelete(v.id)}>
+                Delete
+              </button>
+              {preview?.url && (
+                <div className="voice-preview">
+                  <audio controls autoPlay src={preview.url} />
+                  <span className="hint">{preview.cached ? "from cache" : "freshly rendered"}</span>
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     default_variant: VariantName = "turbo"
     max_upload_bytes: int = Field(20 * 1024 * 1024, gt=0)
     max_text_chars: int = Field(10_000, gt=0)
+    # Sentence spoken by the voice preview. Changing it re-renders every cached preview.
+    preview_text: str = Field(
+        "Hello, this is a quick sample of my voice. How does it sound to you?", min_length=1, max_length=500
+    )
     # Comma-separated in the environment, e.g. PRELOAD_VARIANTS=turbo,standard
     preload_variants: Annotated[tuple[VariantName, ...], NoDecode] = ()
 
