@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Stage 1: build the Vite UI ----
-FROM node:25-slim AS web
+FROM node:24-slim AS web
 WORKDIR /web
 COPY web/package.json ./
 RUN npm install --no-audit --no-fund
