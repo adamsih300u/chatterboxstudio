@@ -1,10 +1,10 @@
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .audio import cut_at_fraction, stitch, to_wav_bytes
 from .config import get_settings
@@ -17,27 +17,31 @@ NO_VOICE = {"", "default", "none"}
 MAX_SEGMENTS = 50
 
 
+VoiceRef = Field(default=None, max_length=64)
+
+
 class Segment(BaseModel):
     text: str
-    voice: Optional[str] = None
+    voice: Optional[str] = VoiceRef
 
 
 class TTSRequest(BaseModel):
+    # Total text length is capped by settings.max_text_chars (MAX_TEXT_CHARS) in render().
     text: str = ""
     # Explicit multi-voice list (alternative to inline {voice} tags in `text`):
     # each segment is generated on its own, then joined.
     # A segment without a voice falls back to the top-level `voice`.
-    segments: Optional[list[Segment]] = None
-    model: Optional[str] = None
-    voice: Optional[str] = None
-    language: str = "en"
+    segments: Optional[list[Segment]] = Field(default=None, max_length=MAX_SEGMENTS)
+    model: Optional[str] = Field(default=None, max_length=64)
+    voice: Optional[str] = VoiceRef
+    language: str = Field(default="en", min_length=2, max_length=16)
     params: dict[str, Any] = {}
-    pause_ms: int = 300
+    pause_ms: int = Field(default=300, ge=0, le=5000)
     save: bool = False
 
 
 class DefaultVoiceRequest(BaseModel):
-    id: Optional[str] = None
+    id: Optional[str] = Field(default=None, max_length=64)
 
 
 class BuiltinRequest(BaseModel):
@@ -45,13 +49,87 @@ class BuiltinRequest(BaseModel):
 
 
 class SpeechRequest(BaseModel):
-    model: Optional[str] = None
+    model: Optional[str] = Field(default=None, max_length=64)
     input: str
-    voice: Optional[str] = None
-    response_format: str = "wav"
-    speed: float = 1.0
-    language: str = "en"
+    voice: Optional[str] = VoiceRef
+    response_format: str = "wav"  # checked in the route so clients get a 400 with a clear message
+    speed: float = Field(default=1.0, gt=0, le=4)
+    language: str = Field(default="en", min_length=2, max_length=16)
     params: dict[str, Any] = {}
+
+
+class VoiceOut(BaseModel):
+    id: str
+    name: str
+    created: float
+
+
+class VoiceList(BaseModel):
+    voices: list[VoiceOut]
+    default: Optional[str]  # None means the built-in voice is the default
+    builtin_hidden: bool
+
+
+class DefaultVoiceOut(BaseModel):
+    default: Optional[str]
+
+
+class BuiltinOut(BaseModel):
+    builtin_hidden: bool
+
+
+class SegmentOut(BaseModel):
+    text: str
+    voice: str = ""
+
+
+class GenerationOut(BaseModel):
+    id: str
+    text: str
+    model: str
+    voice: str
+    language: str
+    created: float
+    segments: list[SegmentOut]
+    params: dict[str, Any]
+
+
+class GenerationList(BaseModel):
+    generations: list[GenerationOut]
+
+
+class ParamSpec(BaseModel):
+    label: str
+    type: Literal["float", "int", "bool"]
+    default: Any
+    help: str
+    min: Optional[float] = None
+    max: Optional[float] = None
+    step: Optional[float] = None
+
+
+class ModelInfo(BaseModel):
+    id: Literal["turbo", "standard", "multilingual"]
+    label: str
+    multilingual: bool
+    state: Literal["idle", "loading", "ready", "error"]
+    loaded: bool
+    error: Optional[str]
+    params: dict[str, ParamSpec]
+
+
+class ModelList(BaseModel):
+    default: str
+    models: list[ModelInfo]
+
+
+class LoadStarted(BaseModel):
+    id: str
+    state: str
+
+
+class Health(BaseModel):
+    status: Literal["ok"]
 
 
 def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_store=None) -> FastAPI:
@@ -78,6 +156,8 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
             raise HTTPException(400, "text is empty")
         if len(segments) > MAX_SEGMENTS:
             raise HTTPException(400, f"at most {MAX_SEGMENTS} segments per request")
+        if sum(len(text) for text, _ in segments) > settings.max_text_chars:
+            raise HTTPException(413, f"text is longer than {settings.max_text_chars} characters")
         try:
             variant = resolve_variant(model, settings.default_variant)
             clean = clean_params(variant, params)
@@ -106,11 +186,11 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         wav = to_wav_bytes(stitch(chunks, rate, min(max(pause_ms, 0), 5000), set(cuts), overlaps), rate)
         return wav, variant, [{"text": i["text"], "voice": i["voice"]} for i in plan]
 
-    @app.get("/api/health")
+    @app.get("/api/health", response_model=Health)
     def health():
         return {"status": "ok"}
 
-    @app.get("/api/models")
+    @app.get("/api/models", response_model=ModelList)
     def models():
         status = engine.status()
         return {
@@ -129,7 +209,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
             ],
         }
 
-    @app.post("/api/models/{variant}/load", status_code=202)
+    @app.post("/api/models/{variant}/load", status_code=202, response_model=LoadStarted)
     def load_model(variant: str):
         try:
             return {"id": variant, "state": engine.start_load(variant)}
@@ -165,7 +245,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         wav, _, _ = render(req.model, segs, req.language, req.params, cuts=cuts)
         return Response(wav, media_type="audio/wav")
 
-    @app.get("/api/voices")
+    @app.get("/api/voices", response_model=VoiceList)
     def list_voices():
         # default None means the built-in voice is the default.
         return {
@@ -174,19 +254,19 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
             "builtin_hidden": store.builtin_hidden(),
         }
 
-    @app.put("/api/voices/builtin")
+    @app.put("/api/voices/builtin", response_model=BuiltinOut)
     def set_builtin(req: BuiltinRequest):
         return {"builtin_hidden": store.set_builtin_hidden(req.hidden)}
 
-    @app.put("/api/voices/default")
+    @app.put("/api/voices/default", response_model=DefaultVoiceOut)
     def set_default_voice(req: DefaultVoiceRequest):
         try:
             return {"default": store.set_default(req.id)}
         except VoiceError as e:
             raise HTTPException(404, str(e))
 
-    @app.post("/api/voices", status_code=201)
-    async def add_voice(name: str = Form(...), file: UploadFile = File(...)):
+    @app.post("/api/voices", status_code=201, response_model=VoiceOut)
+    async def add_voice(name: str = Form(..., min_length=1, max_length=64), file: UploadFile = File(...)):
         data = await file.read(settings.max_upload_bytes + 1)
         if len(data) > settings.max_upload_bytes:
             raise HTTPException(413, "upload too large")
@@ -207,11 +287,11 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         if not store.delete(voice_id):
             raise HTTPException(404, "voice not found")
 
-    @app.get("/api/generations")
+    @app.get("/api/generations", response_model=GenerationList)
     def list_generations():
         return {"generations": [g.public() for g in gen_store.list()]}
 
-    @app.post("/api/generations", status_code=201)
+    @app.post("/api/generations", status_code=201, response_model=GenerationOut)
     async def add_generation(
         text: str = Form(...),
         model: str = Form(""),
