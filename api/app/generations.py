@@ -26,6 +26,7 @@ class Generation:
     path: Path
     segments: list = field(default_factory=list)
     params: dict = field(default_factory=dict)
+    seed: Optional[int] = None
 
     def public(self) -> dict:
         return {
@@ -37,6 +38,7 @@ class Generation:
             "created": self.created,
             "segments": self.segments,
             "params": self.params,
+            "seed": self.seed,
             "duration": file_duration(self.path),
         }
 
@@ -59,6 +61,7 @@ class GenerationStore:
             path=self.root / row.id / "audio.wav",
             segments=row.segments or [],
             params=row.params or {},
+            seed=row.seed,
         )
 
     def add(
@@ -70,6 +73,7 @@ class GenerationStore:
         data: bytes,
         segments: Optional[list] = None,
         params: Optional[dict] = None,
+        seed: Optional[int] = None,
     ) -> Generation:
         if not data:
             raise ValueError("empty audio")
@@ -90,6 +94,7 @@ class GenerationStore:
                 created=now,
                 segments=segments or [],
                 params=params or {},
+                seed=seed,
             )
             with self.db.session() as s:
                 s.add(row)

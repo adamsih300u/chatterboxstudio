@@ -441,6 +441,8 @@ export interface components {
             params: {
                 [key: string]: unknown;
             };
+            /** Seed */
+            seed?: number | null;
             /** Segments */
             segments: components["schemas"]["SegmentOut"][];
             /** Text */
@@ -587,6 +589,8 @@ export interface components {
              * @default wav
              */
             response_format: string;
+            /** Seed */
+            seed?: number | null;
             /**
              * Speed
              * @default 1
@@ -621,6 +625,8 @@ export interface components {
              * @default false
              */
             save: boolean;
+            /** Seed */
+            seed?: number | null;
             /** Segments */
             segments?: components["schemas"]["Segment"][] | null;
             /**

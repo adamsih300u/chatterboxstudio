@@ -1,5 +1,6 @@
 import hashlib
 import json
+import secrets
 from pathlib import Path
 from typing import Any, Literal, Optional
 
@@ -19,6 +20,7 @@ from .script import parse_script_plan
 from .voices import VoiceError, VoiceNotFound, VoiceStore
 
 NO_VOICE = {"", "default", "none"}
+MAX_SEED = 2**32 - 1
 MAX_SEGMENTS = 50
 MAX_REGIONS = 100
 
@@ -58,6 +60,9 @@ class TTSRequest(BaseModel):
     params: dict[str, Any] = {}
     pause_ms: int = Field(default=300, ge=0, le=5000)
     save: bool = False
+    # Same seed + text + voice + settings gives the same take. Omitted: a random one is picked
+    # and returned in the X-Seed header (and stored with the History entry).
+    seed: Optional[int] = Field(default=None, ge=0, le=MAX_SEED)
 
 
 class DefaultVoiceRequest(BaseModel):
@@ -76,6 +81,7 @@ class SpeechRequest(BaseModel):
     speed: float = Field(default=1.0, gt=0, le=4)
     language: str = Field(default="en", min_length=2, max_length=16)
     params: dict[str, Any] = {}
+    seed: Optional[int] = Field(default=None, ge=0, le=MAX_SEED)
 
 
 class Region(BaseModel):
@@ -148,6 +154,7 @@ class GenerationOut(BaseModel):
     created: float
     segments: list[SegmentOut]
     params: dict[str, Any]
+    seed: Optional[int] = None  # None for clips saved before seeds existed
     duration: Optional[float] = None  # seconds
 
 
@@ -207,6 +214,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         params: dict,
         pause_ms: int = 300,
         cuts: Optional[dict] = None,
+        seed: Optional[int] = None,
     ) -> tuple[bytes, str, list[dict]]:
         """Generate every segment, stitch them, and return (wav, variant, resolved segments).
 
@@ -236,7 +244,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         chunks, rate = [], 0
         for i, item in enumerate(plan):
             samples, rate = engine.synthesize(
-                variant, item["text"], ref_path=item["ref"], language=language, params=clean
+                variant, item["text"], ref_path=item["ref"], language=language, params=clean, seed=seed
             )
             cut = cuts.get(i)
             if cut is not None and cut.keep is not None:
@@ -282,8 +290,9 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
             segs, cuts = [(s.text, s.voice or req.voice) for s in req.segments], {}
         else:
             segs, cuts = parse_script_plan(req.text, req.voice)
-        wav, variant, plan = render(req.model, segs, req.language, req.params, req.pause_ms, cuts)
-        headers = duration_headers(wav)
+        seed = req.seed if req.seed is not None else secrets.randbelow(MAX_SEED + 1)
+        wav, variant, plan = render(req.model, segs, req.language, req.params, req.pause_ms, cuts, seed)
+        headers = duration_headers(wav, {"X-Seed": str(seed)})
         if req.save:
             if len(plan) == 1:
                 script = plan[0]["text"]
@@ -292,7 +301,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
             names = list(dict.fromkeys(p["voice"] for p in plan if p["voice"]))
             clean = clean_params(variant, req.params)
             gen = gen_store.add(
-                script, variant, ", ".join(names), req.language, wav, segments=plan, params=clean
+                script, variant, ", ".join(names), req.language, wav, segments=plan, params=clean, seed=seed
             )
             headers["X-Generation-Id"] = gen.id
         return Response(wav, media_type="audio/wav", headers=headers)
@@ -304,9 +313,10 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         except ConvertError as e:
             raise HTTPException(400, str(e))
         segs, cuts = parse_script_plan(req.input, req.voice)
-        wav, _, _ = render(req.model, segs, req.language, req.params, cuts=cuts)
+        seed = req.seed if req.seed is not None else secrets.randbelow(MAX_SEED + 1)
+        wav, _, _ = render(req.model, segs, req.language, req.params, cuts=cuts, seed=seed)
         data, fmt = encode_or_400(wav, req.response_format)
-        return Response(data, media_type=fmt.mime)
+        return Response(data, media_type=fmt.mime, headers={"X-Seed": str(seed)})
 
     def encode_or_400(wav: bytes, name: str):
         try:

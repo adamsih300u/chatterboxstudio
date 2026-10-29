@@ -134,6 +134,14 @@ def configure_threads() -> Optional[int]:
     return n
 
 
+def _seed_torch(seed: int) -> None:
+    try:
+        import torch
+    except ImportError:
+        return
+    torch.manual_seed(seed)
+
+
 def _load_variant(variant: str, device: str) -> Any:
     # Imported lazily so the API (and its tests) start without torch loaded.
     if variant == "turbo":
@@ -284,7 +292,9 @@ class ModelManager:
         ref_path: Optional[Path] = None,
         language: str = "en",
         params: Optional[dict] = None,
+        seed: Optional[int] = None,
     ) -> tuple[np.ndarray, int]:
+        """Generate one clip. A seed makes the sampling repeatable for the same text, voice and settings."""
         model = self.get(variant)
         kwargs: dict[str, Any] = dict(params or {})
         if VARIANTS[variant]["multilingual"]:
@@ -294,6 +304,8 @@ class ModelManager:
                 self._select_conditionals(variant, model, ref_path, kwargs)
             elif ref_path is not None:
                 kwargs["audio_prompt_path"] = str(ref_path)
+            if seed is not None:
+                _seed_torch(seed)
             wav = model.generate(text, **kwargs)
         samples = wav.squeeze().detach().cpu().numpy() if hasattr(wav, "detach") else np.asarray(wav)
         return samples, int(model.sr)

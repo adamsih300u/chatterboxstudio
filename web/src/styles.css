@@ -365,3 +365,7 @@ label.inline {
   gap: 0.5rem;
   justify-content: flex-end;
 }
+
+input.seed {
+  width: 8.5rem;
+}
