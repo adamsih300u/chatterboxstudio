@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PointerEvent } from "react";
 import {
   joinRegions,
   lengthWarning,
@@ -7,6 +8,7 @@ import {
   resultToSourceTime,
   totalDuration,
 } from "./audioEdit.js";
+import type { Region } from "./audioEdit.js";
 
 const RATE = 24000;
 const HEIGHT = 120;
@@ -14,15 +16,45 @@ const EDGE_PX = 6;
 
 // Waveform with keep-regions. Reports { samples, rate, regions } to onChange,
 // or null when the file cannot be decoded.
-export default function ClipEditor({ file, onChange }) {
-  const canvasRef = useRef(null);
-  const audioRef = useRef(null); // { samples, rate, duration }
-  const playRef = useRef(null); // { source, ctx, raf }
-  const dragRef = useRef(null);
+export interface ClipEdit {
+  samples: Float32Array<ArrayBuffer>;
+  rate: number;
+  regions: Region[];
+}
+
+interface Decoded {
+  samples: Float32Array<ArrayBuffer>;
+  rate: number;
+  duration: number;
+}
+
+interface Playback {
+  source: AudioBufferSourceNode;
+  ctx: AudioContext;
+  raf: number;
+}
+
+interface Drag {
+  mode: "move" | "start" | "end";
+  index: number;
+  from: number;
+  orig: Region;
+}
+
+interface Props {
+  file: File;
+  onChange: (edit: ClipEdit | null) => void;
+}
+
+export default function ClipEditor({ file, onChange }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const audioRef = useRef<Decoded | null>(null);
+  const playRef = useRef<Playback | null>(null);
+  const dragRef = useRef<Drag | null>(null);
   const [ready, setReady] = useState(false);
-  const [regions, setRegions] = useState([]);
+  const [regions, setRegions] = useState<Region[]>([]);
   const [selected, setSelected] = useState(-1);
-  const [playhead, setPlayhead] = useState(null);
+  const [playhead, setPlayhead] = useState<number | null>(null);
   const [status, setStatus] = useState("");
 
   const stop = useCallback(() => {
@@ -73,7 +105,7 @@ export default function ClipEditor({ file, onChange }) {
   }, [file]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (ready) onChange({ ...audioRef.current, regions });
+    if (ready && audioRef.current) onChange({ ...audioRef.current, regions });
   }, [regions, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Draw.
@@ -85,8 +117,9 @@ export default function ClipEditor({ file, onChange }) {
     canvas.width = w;
     canvas.height = HEIGHT;
     const g = canvas.getContext("2d");
+    if (!g) return;
     g.clearRect(0, 0, w, HEIGHT);
-    const x = (t) => (t / a.duration) * w;
+    const x = (t: number) => (t / a.duration) * w;
     regions.forEach((r, i) => {
       g.fillStyle = i === selected ? "rgba(46,125,50,0.45)" : "rgba(46,125,50,0.25)";
       g.fillRect(x(r.start), 0, x(r.end) - x(r.start), HEIGHT);
@@ -108,23 +141,27 @@ export default function ClipEditor({ file, onChange }) {
     }
   }, [ready, regions, selected, playhead]);
 
-  const timeAt = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
+  const timeAt = (e: PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    const a = audioRef.current;
+    if (!canvas || !a) return 0;
+    const rect = canvas.getBoundingClientRect();
     const f = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    return f * audioRef.current.duration;
+    return f * a.duration;
   };
 
-  function onPointerDown(e) {
-    if (!ready) return;
+  function onPointerDown(e: PointerEvent<HTMLCanvasElement>) {
     const a = audioRef.current;
-    const rect = canvasRef.current.getBoundingClientRect();
+    const canvas = canvasRef.current;
+    if (!ready || !a || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
     const t = timeAt(e);
     const slack = (EDGE_PX / rect.width) * a.duration;
-    canvasRef.current.setPointerCapture(e.pointerId);
+    canvas.setPointerCapture(e.pointerId);
     const hit = regions.findIndex((r) => t >= r.start - slack && t <= r.end + slack);
     if (hit >= 0) {
       const r = regions[hit];
-      let mode = "move";
+      let mode: Drag["mode"] = "move";
       if (Math.abs(t - r.start) <= slack) mode = "start";
       else if (Math.abs(t - r.end) <= slack) mode = "end";
       dragRef.current = { mode, index: hit, from: t, orig: { ...r } };
@@ -137,10 +174,10 @@ export default function ClipEditor({ file, onChange }) {
     }
   }
 
-  function onPointerMove(e) {
+  function onPointerMove(e: PointerEvent<HTMLCanvasElement>) {
     const d = dragRef.current;
-    if (!d) return;
     const a = audioRef.current;
+    if (!d || !a) return;
     const t = timeAt(e);
     setRegions((prev) => {
       const next = [...prev];
@@ -159,11 +196,12 @@ export default function ClipEditor({ file, onChange }) {
 
   function onPointerUp() {
     const d = dragRef.current;
-    if (!d) return;
+    const a = audioRef.current;
+    if (!d || !a) return;
     dragRef.current = null;
     // Merge overlaps and drop slivers; keep the selection on the region holding the dragged one.
     const cur = regions[d.index];
-    const next = normalizeRegions(regions, audioRef.current.duration);
+    const next = normalizeRegions(regions, a.duration);
     setRegions(next);
     const mid = cur ? (cur.start + cur.end) / 2 : -1;
     setSelected(next.findIndex((r) => mid >= r.start && mid <= r.end));
@@ -175,11 +213,11 @@ export default function ClipEditor({ file, onChange }) {
     setSelected(-1);
   }
 
-  function play(list) {
+  function play(list: Region[] | null) {
     stop();
     const a = audioRef.current;
-    const isResult = list !== null;
-    const samples = isResult ? joinRegions(a.samples, a.rate, list) : a.samples;
+    if (!a) return;
+    const samples = list ? joinRegions(a.samples, a.rate, list) : a.samples;
     if (!samples.length) return;
     const ctx = new AudioContext({ sampleRate: a.rate });
     const buf = ctx.createBuffer(1, samples.length, a.rate);
@@ -190,7 +228,7 @@ export default function ClipEditor({ file, onChange }) {
     const startedAt = ctx.currentTime;
     const tick = () => {
       const elapsed = ctx.currentTime - startedAt;
-      setPlayhead(isResult ? resultToSourceTime(list, elapsed) : elapsed);
+      setPlayhead(list ? resultToSourceTime(list, elapsed) : elapsed);
       if (playRef.current) playRef.current.raf = requestAnimationFrame(tick);
     };
     source.onended = stop;
@@ -232,7 +270,7 @@ export default function ClipEditor({ file, onChange }) {
             </button>
           </div>
           <p className="hint">
-            Source {audioRef.current.duration.toFixed(1)}s.{" "}
+            Source {audioRef.current?.duration.toFixed(1)}s.{" "}
             {regions.length
               ? `Keeping ${regions.length} region${regions.length > 1 ? "s" : ""}, ${total.toFixed(1)}s total.`
               : "Drag on the waveform to mark the parts to keep. With no regions, the whole file is saved."}{" "}

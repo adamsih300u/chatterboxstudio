@@ -1,20 +1,31 @@
 import { useRef, useState } from "react";
-import { addVoice, deleteVoice, setBuiltinHidden, setDefaultVoice } from "./api.js";
-import ClipEditor from "./ClipEditor.jsx";
+import type { FormEvent } from "react";
+import { addVoice, deleteVoice, errorMessage, setBuiltinHidden, setDefaultVoice } from "./api";
+import type { VoiceOut } from "./api";
+import ClipEditor from "./ClipEditor";
+import type { ClipEdit } from "./ClipEditor";
 import { encodeWav, joinRegions } from "./audioEdit.js";
 
-export default function VoicesTab({ voices, defaultVoice, builtinHidden, refreshVoices, setError }) {
-  const [name, setName] = useState("");
-  const fileRef = useRef(null);
-  const [file, setFile] = useState(null);
-  const [edit, setEdit] = useState(null); // { samples, rate, regions } from the clip editor
+interface Props {
+  voices: VoiceOut[];
+  defaultVoice: string;
+  builtinHidden: boolean;
+  refreshVoices: () => Promise<void>;
+  setError: (message: string) => void;
+}
 
-  async function onSave(e) {
+export default function VoicesTab({ voices, defaultVoice, builtinHidden, refreshVoices, setError }: Props) {
+  const [name, setName] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [edit, setEdit] = useState<ClipEdit | null>(null);
+
+  async function onSave(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!file || !name.trim()) return;
     setError("");
     try {
-      let upload = file;
+      let upload: Blob = file;
       if (edit && edit.regions.length) {
         const wav = encodeWav(joinRegions(edit.samples, edit.rate, edit.regions), edit.rate);
         upload = new File([wav], "clip.wav", { type: "audio/wav" });
@@ -23,20 +34,20 @@ export default function VoicesTab({ voices, defaultVoice, builtinHidden, refresh
       setName("");
       setFile(null);
       setEdit(null);
-      fileRef.current.value = "";
+      if (fileRef.current) fileRef.current.value = "";
       await refreshVoices();
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     }
   }
 
-  async function onDefault(id) {
+  async function onDefault(id: string | null) {
     setError("");
     try {
       await setDefaultVoice(id);
       await refreshVoices();
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     }
   }
 
@@ -46,17 +57,17 @@ export default function VoicesTab({ voices, defaultVoice, builtinHidden, refresh
       await setBuiltinHidden(!builtinHidden);
       await refreshVoices();
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     }
   }
 
-  async function onDelete(id) {
+  async function onDelete(id: string) {
     setError("");
     try {
       await deleteVoice(id);
       await refreshVoices();
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     }
   }
 

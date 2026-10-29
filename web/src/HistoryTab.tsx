@@ -1,18 +1,25 @@
-import { deleteGeneration } from "./api.js";
+import { deleteGeneration, errorMessage } from "./api";
+import type { GenerationOut } from "./api";
 
-function describeParams(params) {
+interface Props {
+  generations: GenerationOut[];
+  refreshGenerations: () => Promise<void>;
+  setError: (message: string) => void;
+}
+
+function describeParams(params: GenerationOut["params"]) {
   const entries = Object.entries(params || {});
   return entries.length ? entries.map(([k, v]) => `${k}=${v}`).join(", ") : "";
 }
 
-export default function HistoryTab({ generations, refreshGenerations, setError }) {
-  async function onDelete(id) {
+export default function HistoryTab({ generations, refreshGenerations, setError }: Props) {
+  async function onDelete(id: string) {
     setError("");
     try {
       await deleteGeneration(id);
       await refreshGenerations();
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     }
   }
 
@@ -32,7 +39,7 @@ export default function HistoryTab({ generations, refreshGenerations, setError }
               <span className="gen-meta">
                 {g.model}
                 {g.voice ? ` / ${g.voice}` : ""}
-                {g.segments?.length > 1 ? ` / ${g.segments.length} lines` : ""} / {new Date(g.created * 1000).toLocaleString()}
+                {(g.segments?.length ?? 0) > 1 ? ` / ${g.segments?.length} lines` : ""} / {new Date(g.created * 1000).toLocaleString()}
               </span>
               <audio controls preload="none" src={url} />
               <a href={url} download={`${g.id}.wav`}>

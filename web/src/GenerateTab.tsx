@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import AdvancedParams from "./AdvancedParams.jsx";
-import TagTextarea, { TURBO_TAGS } from "./TagTextarea.jsx";
-import { synthesize } from "./api.js";
+import AdvancedParams from "./AdvancedParams";
+import type { ParamValue, ParamValues } from "./AdvancedParams";
+import TagTextarea, { TURBO_TAGS } from "./TagTextarea";
+import { errorMessage, synthesize } from "./api";
+import type { ModelInfo, VoiceOut } from "./api";
 
-const STATE_LABEL = { idle: "not loaded", loading: "loading...", ready: "", error: "failed to load" };
+const STATE_LABEL: Record<ModelInfo["state"], string> = { idle: "not loaded", loading: "loading...", ready: "", error: "failed to load" };
 
 const LANGUAGES = [
   ["en", "English"], ["ar", "Arabic"], ["da", "Danish"], ["de", "German"], ["el", "Greek"],
@@ -15,15 +17,28 @@ const LANGUAGES = [
 
 const VOICE_TAG = /\{[^{}\n]{1,64}\}/;
 
-export default function GenerateTab({ models, model, setModel, voices, defaultVoice, builtinHidden, onLoadModel, refreshModels, refreshGenerations, setError }) {
+interface Props {
+  models: ModelInfo[];
+  model: string;
+  setModel: (id: string) => void;
+  voices: VoiceOut[];
+  defaultVoice: string;
+  builtinHidden: boolean;
+  onLoadModel: () => void;
+  refreshModels: () => Promise<void>;
+  refreshGenerations: () => Promise<void>;
+  setError: (message: string) => void;
+}
+
+export default function GenerateTab({ models, model, setModel, voices, defaultVoice, builtinHidden, onLoadModel, refreshModels, refreshGenerations, setError }: Props) {
   const [text, setText] = useState("");
   const [voice, setVoice] = useState("");
   const [language, setLanguage] = useState("en");
   // Overrides per variant, so switching models does not leak settings across.
-  const [overrides, setOverrides] = useState({});
+  const [overrides, setOverrides] = useState<Record<string, ParamValues>>({});
   const [pauseMs, setPauseMs] = useState(300);
   const [keep, setKeep] = useState(true);
-  const [audioUrl, setAudioUrl] = useState(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Follow the saved default whenever it changes (it loads after first render).
@@ -37,9 +52,9 @@ export default function GenerateTab({ models, model, setModel, voices, defaultVo
   const ready = selected?.state === "ready";
   const multi = VOICE_TAG.test(text);
   const values = overrides[model] || {};
-  const canGenerate = ready && !busy && text.trim();
+  const canGenerate = ready && !busy && text.trim() !== "";
 
-  function setParam(key, value) {
+  function setParam(key: string, value: ParamValue) {
     setOverrides((o) => ({ ...o, [model]: { ...(o[model] || {}), [key]: value } }));
   }
 
@@ -55,7 +70,7 @@ export default function GenerateTab({ models, model, setModel, voices, defaultVo
       refreshModels().catch(() => {});
       if (keep) refreshGenerations().catch(() => {});
     } catch (e) {
-      setError(e.message);
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
