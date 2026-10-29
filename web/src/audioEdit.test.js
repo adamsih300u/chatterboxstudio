@@ -8,6 +8,8 @@ import {
   splitAtBounds,
   encodeWav,
   joinRegions,
+  keepOnlyRegions,
+  wavBytes,
   MIN_VIEW_S,
   normalizeRegions,
   panView,
@@ -148,4 +150,24 @@ test("needsServerDecode picks audiobooks and big files", () => {
   assert.equal(needsServerDecode("Book.M4B", 1000), true);
   assert.equal(needsServerDecode("clip.m4a", 1000), false);
   assert.equal(needsServerDecode("clip.wav", 40 * 1024 * 1024), true);
+});
+
+test("keepOnlyRegions keeps the selected audio and re-bases the regions", () => {
+  const rate = 10;
+  const samples = Float32Array.from({ length: 100 }, (_, i) => i);
+  const { samples: out, regions } = keepOnlyRegions(samples, rate, [
+    { start: 1, end: 2 },
+    { start: 5, end: 7 },
+  ]);
+  assert.equal(out.length, 30);
+  assert.equal(out[0], 10);
+  assert.equal(out[10], 50);
+  assert.deepEqual(regions, [
+    { start: 0, end: 1 },
+    { start: 1, end: 3 },
+  ]);
+});
+
+test("wavBytes counts a 44-byte header and 2 bytes a sample", () => {
+  assert.equal(wavBytes(1000), 2044);
 });

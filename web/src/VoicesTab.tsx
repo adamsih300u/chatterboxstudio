@@ -17,7 +17,14 @@ import { FormatSelect, useExportFormat } from "./ExportFormat";
 import Player from "./Player";
 import MoreMenu from "./MoreMenu";
 import type { ClipEdit } from "./ClipEditor";
-import { encodeWav, joinRegions, needsServerDecode } from "./audioEdit.js";
+import {
+  MAX_ORIGINAL_BYTES,
+  encodeWav,
+  joinRegions,
+  keepOnlyRegions,
+  needsServerDecode,
+  wavBytes,
+} from "./audioEdit.js";
 
 interface Props {
   model: string;
@@ -80,8 +87,17 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
       if (!rawSingle) {
         // The decoded audio becomes the original, so the voice can be re-trimmed later.
         if (!edit) return;
-        const combined = new File([encodeWav(edit.samples, edit.rate)], "sources.wav", { type: "audio/wav" });
-        await addVoice(name.trim(), clipFrom(edit), combined, edit.regions);
+        let { samples, regions } = edit;
+        if (wavBytes(samples.length) > MAX_ORIGINAL_BYTES) {
+          // Too big to store whole: keep only the selected parts as the original.
+          if (!regions.length) {
+            setError("This audio is too long to save whole. Select the parts you want to keep, then save.");
+            return;
+          }
+          ({ samples, regions } = keepOnlyRegions(samples, edit.rate, regions));
+        }
+        const combined = new File([encodeWav(samples, edit.rate)], "sources.wav", { type: "audio/wav" });
+        await addVoice(name.trim(), clipFrom(edit), combined, regions);
       } else if (edit && edit.regions.length) {
         // Keep the untrimmed upload and the cut so the voice can be re-trimmed later.
         await addVoice(name.trim(), clipFrom(edit), files[0], edit.regions);
