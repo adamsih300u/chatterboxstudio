@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import AdvancedParams from "./AdvancedParams";
 import type { ParamValue, ParamValues } from "./AdvancedParams";
 import TagTextarea, { TURBO_TAGS } from "./TagTextarea";
-import { convertWav, errorMessage, synthesize } from "./api";
+import { canStream, convertWav, errorMessage, synthesize, synthesizeStreaming } from "./api";
 import { FormatSelect, saveBlob, useExportFormat } from "./ExportFormat";
 import Player from "./Player";
 import type { ModelInfo, VoiceOut } from "./api";
@@ -51,6 +51,8 @@ export default function GenerateTab({ reuse, models, model, setModel, voices, de
   const [overrides, setOverrides] = useState<Record<string, ParamValues>>({});
   const [pauseMs, setPauseMs] = useState(300);
   const [keep, setKeep] = useState(true);
+  const [stream, setStream] = useState(true);
+  const [hearing, setHearing] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioLength, setAudioLength] = useState<number | null>(null);
@@ -91,7 +93,11 @@ export default function GenerateTab({ reuse, models, model, setModel, voices, de
     setBusy(true);
     try {
       const wanted = /^\d+$/.test(seedText.trim()) ? Number(seedText.trim()) : null;
-      const { blob, duration, seed } = await synthesize({ text, voice, model, language, params: values, pauseMs, save: keep, seed: wanted });
+      const args = { text, voice, model, language, params: values, pauseMs, save: keep, seed: wanted };
+      const streamed = stream && canStream(text);
+      const { blob, duration, seed } = streamed
+        ? await synthesizeStreaming(args, () => setHearing(true))
+        : await synthesize(args);
       setLastSeed(seed);
       setAudioUrl((old) => {
         if (old) URL.revokeObjectURL(old);
@@ -105,6 +111,7 @@ export default function GenerateTab({ reuse, models, model, setModel, voices, de
       setError(errorMessage(e));
     } finally {
       setBusy(false);
+      setHearing(false);
     }
   }
 
@@ -198,11 +205,18 @@ export default function GenerateTab({ reuse, models, model, setModel, voices, de
       )}
       <div className="row">
         <button onClick={onGenerate} disabled={!canGenerate}>
-          {busy ? "Generating..." : "Generate"}
+          {busy ? (hearing ? "Playing..." : "Generating...") : "Generate"}
         </button>
         <label className="inline">
           <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />
           Keep in History
+        </label>
+        <label
+          className="inline"
+          title={canStream(text) ? "Play each sentence as soon as it is ready." : "Scripts with {cut} are generated whole, then played."}
+        >
+          <input type="checkbox" checked={stream && canStream(text)} disabled={!canStream(text)} onChange={(e) => setStream(e.target.checked)} />
+          Stream
         </label>
         <label className="inline">
           Seed
