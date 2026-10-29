@@ -53,9 +53,39 @@ jobs:
           npm run gen:types
           git diff --exit-code -- src/api-types.ts
 
+  # Image builds are slow (torch, two architectures). On pull requests, only run them
+  # when something that goes into the image changed. Pushes to main and tags always build.
+  changes:
+    name: Detect image-affecting changes
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.filter.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$BASE" "$HEAD")
+          echo "$changed"
+          if grep -qE '^(Dockerfile|\.dockerignore|docker-compose\.yml|api/requirements.*\.txt|web/package(-lock)?\.json|\.github/workflows/docker\.yml)$' <<< "$changed"; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: Build ${{ matrix.platform }}
-    needs: test
+    needs: [test, changes]
+    if: needs.changes.outputs.image == 'true'
     # Native runners per architecture: no QEMU, so the torch layers stay fast.
     runs-on: ${{ matrix.runner }}
     permissions:
