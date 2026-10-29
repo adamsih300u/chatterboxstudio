@@ -4,6 +4,7 @@ import {
   concatSamples,
   joinRegions,
   lengthWarning,
+  formatDuration,
   normalizeRegions,
   panView,
   peaks,
@@ -11,7 +12,9 @@ import {
   splitAtBounds,
   totalDuration,
   zoomView,
+  needsServerDecode,
 } from "./audioEdit.js";
+import { SERVER_DECODE_SECONDS, decodeOnServer } from "./api";
 import type { Region, View } from "./audioEdit.js";
 
 const RATE = 24000;
@@ -57,6 +60,20 @@ interface Props {
   // Regions to start with once the file is decoded (re-trimming a saved voice).
   initialRegions?: Region[];
   onChange: (edit: ClipEdit | null) => void;
+}
+
+// The browser decodes ordinary files itself. Audiobooks, big files and anything it cannot read
+// go to the server, which returns a window of mono WAV.
+async function decodeFile(ctx: AudioContext, file: File): Promise<{ buf: AudioBuffer; windowed: boolean }> {
+  if (!needsServerDecode(file.name, file.size)) {
+    try {
+      return { buf: await ctx.decodeAudioData(await file.arrayBuffer()), windowed: false };
+    } catch {
+      /* fall through to the server */
+    }
+  }
+  const buf = await ctx.decodeAudioData(await decodeOnServer(file));
+  return { buf, windowed: buf.duration >= SERVER_DECODE_SECONDS - 1 };
 }
 
 function cursorFor(mode: Mode | null, dragging: boolean): string {
@@ -112,10 +129,12 @@ export default function ClipEditor({ files, initialRegions, onChange }: Props) {
       let current = "the file";
       try {
         const parts: Float32Array<ArrayBuffer>[] = [];
+        const cutShort: string[] = [];
         for (const file of files) {
           current = file.name || current;
-          const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+          const { buf, windowed } = await decodeFile(ctx, file);
           if (cancelled) return;
+          if (windowed) cutShort.push(file.name);
           const mono = new Float32Array(buf.length);
           for (let c = 0; c < buf.numberOfChannels; c++) {
             const d = buf.getChannelData(c);
@@ -128,13 +147,19 @@ export default function ClipEditor({ files, initialRegions, onChange }: Props) {
         audioRef.current = { samples, rate: RATE, duration, bounds };
         setRegions((cur) => normalizeRegions(appended ? cur : (initialRegions ?? []), duration));
         setReady(true);
-        setStatus("");
+        setStatus(
+          cutShort.length
+            ? `${cutShort.join(", ")} is long, so only its first ${SERVER_DECODE_SECONDS / 60} minutes are loaded here.`
+            : ""
+        );
       } catch {
         if (!cancelled) {
           setStatus(
             files.length > 1
-              ? `This browser could not decode ${current}. Remove it to continue.`
-              : "This browser could not decode the file. It will be uploaded as is."
+              ? `Neither the browser nor the server could decode ${current}. Remove it to continue.`
+              : files[0] && needsServerDecode(files[0].name, files[0].size)
+                ? `Neither the browser nor the server could decode ${current}.`
+                : "Neither the browser nor the server could decode the file. It will be uploaded as is."
           );
         }
       } finally {
@@ -415,7 +440,7 @@ export default function ClipEditor({ files, initialRegions, onChange }: Props) {
             </button>
           </div>
           <p className="hint">
-            Source {duration.toFixed(1)}s.{" "}
+            Source {formatDuration(duration)} ({duration.toFixed(1)}s).{" "}
             {regions.length
               ? `Keeping ${regions.length} region${regions.length > 1 ? "s" : ""}, ${total.toFixed(1)}s total.`
               : "Drag on the waveform to mark the parts to keep. With no regions, the whole file is saved."}{" "}

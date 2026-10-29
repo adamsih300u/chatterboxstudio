@@ -161,3 +161,20 @@ export function lengthWarning(seconds) {
   if (seconds > 30) return "Over about 30 seconds adds little.";
   return "";
 }
+
+// "m:ss" (or "h:mm:ss") for a length in seconds; "" when it is not a finite number.
+export function formatDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const pad = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+}
+
+// Files the browser should not decode itself: audiobooks (M4B) and anything big enough to
+// strain a tab. The server converts a window of them instead.
+export const LARGE_FILE_BYTES = 15 * 1024 * 1024;
+export function needsServerDecode(name, size) {
+  return /\.m4b$/i.test(name) || size > LARGE_FILE_BYTES;
+}

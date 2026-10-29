@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError, model_valid
 
 from .audio import cut_at_fraction, stitch, to_wav_bytes
 from .config import get_settings
+from .convert import ConvertError, decode, encode, get_format, wav_duration
 from .db import Database
 from .generations import GenerationStore
 from .legacy import import_legacy
@@ -23,6 +24,20 @@ MAX_REGIONS = 100
 
 
 VoiceRef = Field(default=None, max_length=64)
+
+# Uploads the model's audio loader may not read; they are converted to WAV when saved.
+CONVERT_ON_UPLOAD = {".m4a", ".m4b", ".aac", ".opus"}
+MAX_DECODE_SECONDS = 1800.0
+
+
+def duration_headers(wav: bytes, headers: Optional[dict] = None) -> dict:
+    """Response headers that tell the client how long the audio is before it plays."""
+    out = dict(headers or {})
+    try:
+        out["X-Audio-Duration"] = f"{wav_duration(wav):.3f}"
+    except Exception:
+        pass
+    return out
 
 
 class Segment(BaseModel):
@@ -102,6 +117,7 @@ class VoiceOut(BaseModel):
     updated: float
     regions: list[Region]
     has_original: bool
+    duration: Optional[float] = None  # seconds of the saved clip, when it can be read
 
 
 class VoiceList(BaseModel):
@@ -132,6 +148,7 @@ class GenerationOut(BaseModel):
     created: float
     segments: list[SegmentOut]
     params: dict[str, Any]
+    duration: Optional[float] = None  # seconds
 
 
 class GenerationList(BaseModel):
@@ -266,7 +283,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         else:
             segs, cuts = parse_script_plan(req.text, req.voice)
         wav, variant, plan = render(req.model, segs, req.language, req.params, req.pause_ms, cuts)
-        headers = {}
+        headers = duration_headers(wav)
         if req.save:
             if len(plan) == 1:
                 script = plan[0]["text"]
@@ -282,11 +299,47 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
 
     @app.post("/v1/audio/speech")
     def speech(req: SpeechRequest):
-        if req.response_format != "wav":
-            raise HTTPException(400, "only response_format 'wav' is supported")
+        try:
+            get_format(req.response_format)
+        except ConvertError as e:
+            raise HTTPException(400, str(e))
         segs, cuts = parse_script_plan(req.input, req.voice)
         wav, _, _ = render(req.model, segs, req.language, req.params, cuts=cuts)
-        return Response(wav, media_type="audio/wav")
+        data, fmt = encode_or_400(wav, req.response_format)
+        return Response(data, media_type=fmt.mime)
+
+    def encode_or_400(wav: bytes, name: str):
+        try:
+            return encode(wav, name)
+        except ConvertError as e:
+            raise HTTPException(400, str(e))
+
+    def attachment(base: str, fmt) -> dict:
+        return {"Content-Disposition": f'attachment; filename="{base}.{fmt.ext}"'}
+
+    @app.post("/api/convert")
+    async def convert(file: UploadFile = File(...), format: str = "mp3"):
+        """Re-encode a WAV (a fresh, unsaved generation) for download."""
+        wav = await read_upload(file)
+        try:
+            wav_duration(wav)
+        except Exception:
+            raise HTTPException(400, "expected a WAV file")
+        data, fmt = encode_or_400(wav, format)
+        return Response(data, media_type=fmt.mime, headers=attachment("speech", fmt))
+
+    @app.post("/api/audio/decode")
+    async def decode_audio(file: UploadFile = File(...), start: float = 0.0, seconds: float = MAX_DECODE_SECONDS):
+        """Any audio ffmpeg reads (M4B audiobooks included) as a mono WAV window, so the browser
+        never has to decode a whole book."""
+        if start < 0 or seconds <= 0:
+            raise HTTPException(400, "start must be >= 0 and seconds > 0")
+        data = await read_upload(file, settings.max_decode_bytes)
+        try:
+            wav = decode(data, start, min(seconds, MAX_DECODE_SECONDS))
+        except ConvertError as e:
+            raise HTTPException(400, str(e))
+        return Response(wav, media_type="audio/wav", headers=duration_headers(wav))
 
     @app.get("/api/voices", response_model=VoiceList)
     def list_voices():
@@ -308,11 +361,21 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         except VoiceError as e:
             raise HTTPException(404, str(e))
 
-    async def read_upload(upload: UploadFile) -> bytes:
-        data = await upload.read(settings.max_upload_bytes + 1)
-        if len(data) > settings.max_upload_bytes:
+    async def read_upload(upload: UploadFile, limit: Optional[int] = None) -> bytes:
+        limit = limit or settings.max_upload_bytes
+        data = await upload.read(limit + 1)
+        if len(data) > limit:
             raise HTTPException(413, "upload too large")
         return data
+
+    def normalize(data: bytes, filename: str) -> tuple[bytes, str]:
+        """M4A, M4B and friends are stored as WAV so every later step reads them the same way."""
+        if Path(filename or "").suffix.lower() not in CONVERT_ON_UPLOAD:
+            return data, filename
+        try:
+            return decode(data, 0.0, MAX_DECODE_SECONDS), Path(filename).stem + ".wav"
+        except ConvertError as e:
+            raise HTTPException(400, f"could not read {filename}: {e}")
 
     @app.post("/api/voices", status_code=201, response_model=VoiceOut)
     async def add_voice(
@@ -324,13 +387,12 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         """`file` is the clip used for cloning. `original` (the untrimmed upload) and `regions`
         (how it was cut) are optional and let the clip be re-trimmed later."""
         keep = parse_regions(regions)
-        data = await read_upload(file)
-        orig = await read_upload(original) if original else None
+        data, fname = normalize(await read_upload(file), file.filename or "")
+        orig, oname = (None, "")
+        if original:
+            orig, oname = normalize(await read_upload(original), original.filename or "")
         try:
-            return store.add(
-                name, data, file.filename or "", original=orig,
-                original_filename=(original.filename or "") if original else "", regions=keep,
-            ).public()
+            return store.add(name, data, fname, original=orig, original_filename=oname, regions=keep).public()
         except VoiceError as e:
             raise HTTPException(400, str(e))
 
@@ -343,13 +405,12 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
     ):
         """Replace a voice's clip, keeping its name. Previews of the old clip are discarded."""
         keep = parse_regions(regions)
-        data = await read_upload(file)
-        orig = await read_upload(original) if original else None
+        data, fname = normalize(await read_upload(file), file.filename or "")
+        orig, oname = (None, "")
+        if original:
+            orig, oname = normalize(await read_upload(original), original.filename or "")
         try:
-            return store.update(
-                voice_id, data, file.filename or "", regions=keep, original=orig,
-                original_filename=(original.filename or "") if original else "",
-            ).public()
+            return store.update(voice_id, data, fname, regions=keep, original=orig, original_filename=oname).public()
         except VoiceNotFound as e:
             raise HTTPException(404, str(e))
         except VoiceError as e:
@@ -371,10 +432,23 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         return FileResponse(find_voice(voice_id).source_path)
 
     @app.get("/api/voices/{voice_id}/export")
-    def voice_export(voice_id: str):
-        """The trimmed clip as a download; upload it to another instance to import the voice."""
+    def voice_export(voice_id: str, format: str = ""):
+        """The trimmed clip as a download; upload it to another instance to import the voice.
+        Without `format` the stored file is sent as is."""
         voice = find_voice(voice_id)
-        return FileResponse(voice.path, filename=f"{voice.id}{voice.path.suffix}")
+        if not format:
+            return FileResponse(voice.path, filename=f"{voice.id}{voice.path.suffix}")
+        data, fmt = encode_or_400(to_wav_file(voice.path), format)
+        return Response(data, media_type=fmt.mime, headers=attachment(voice.id, fmt))
+
+    def to_wav_file(path: Path) -> bytes:
+        data = path.read_bytes()
+        if path.suffix.lower() == ".wav":
+            return data
+        try:
+            return decode(data)
+        except ConvertError as e:
+            raise HTTPException(400, str(e))
 
     @app.post("/api/voices/{voice_id}/preview")
     def voice_preview(voice_id: str, req: PreviewRequest):
@@ -395,10 +469,11 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         ).hexdigest()[:32]
         cached = store.preview_path(voice, key)
         if cached.is_file():
-            return Response(cached.read_bytes(), media_type="audio/wav", headers={"X-Preview-Cached": "true"})
+            cached_wav = cached.read_bytes()
+            return Response(cached_wav, media_type="audio/wav", headers=duration_headers(cached_wav, {"X-Preview-Cached": "true"}))
         wav, _, _ = render(variant, [(settings.preview_text, voice.id)], req.language, req.params)
         store.save_preview(voice, key, wav)
-        return Response(wav, media_type="audio/wav", headers={"X-Preview-Cached": "false"})
+        return Response(wav, media_type="audio/wav", headers=duration_headers(wav, {"X-Preview-Cached": "false"}))
 
     @app.delete("/api/voices/{voice_id}", status_code=204)
     def delete_voice(voice_id: str):
@@ -426,11 +501,14 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
             raise HTTPException(400, str(e))
 
     @app.get("/api/generations/{gen_id}/audio")
-    def generation_audio(gen_id: str):
+    def generation_audio(gen_id: str, format: str = "wav", download: bool = False):
         gen = gen_store.get(gen_id)
         if gen is None:
             raise HTTPException(404, "generation not found")
-        return FileResponse(gen.path, media_type="audio/wav")
+        if format.lower() == "wav":
+            return FileResponse(gen.path, media_type="audio/wav", filename=f"{gen.id}.wav" if download else None)
+        data, fmt = encode_or_400(gen.path.read_bytes(), format)
+        return Response(data, media_type=fmt.mime, headers=attachment(gen.id, fmt))
 
     @app.delete("/api/generations/{gen_id}", status_code=204)
     def delete_generation(gen_id: str):

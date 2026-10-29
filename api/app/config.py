@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     static_dir: Path = Path("/app/static")
     default_variant: VariantName = "turbo"
     max_upload_bytes: int = Field(20 * 1024 * 1024, gt=0)
+    # Uploads sent to /api/audio/decode, which may be whole audiobooks.
+    max_decode_bytes: int = Field(300 * 1024 * 1024, gt=0)
     max_text_chars: int = Field(10_000, gt=0)
     # Sentence spoken by the voice preview. Changing it re-renders every cached preview.
     preview_text: str = Field(

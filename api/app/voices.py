@@ -10,9 +10,10 @@ from typing import Optional
 
 from sqlalchemy import select
 
+from .convert import file_duration
 from .db import Database, VoiceRow
 
-ALLOWED_EXTS = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
+ALLOWED_EXTS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".m4b", ".aac", ".opus"}
 DEFAULT_KEY = "default_voice"
 HIDDEN_KEY = "builtin_hidden"
 PREVIEW_PREFIX = "preview-"
@@ -47,6 +48,7 @@ class Voice:
             "updated": self.updated or self.created,
             "regions": self.regions,
             "has_original": bool(self.original),
+            "duration": file_duration(self.path),
         }
 
     @property

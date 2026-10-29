@@ -25,3 +25,6 @@ export function clampView(view: View, duration: number): View;
 export function zoomView(view: View, duration: number, anchor: number, factor: number): View;
 export function panView(view: View, duration: number, deltaS: number): View;
 export function lengthWarning(seconds: number): string;
+export function formatDuration(seconds: number): string;
+export const LARGE_FILE_BYTES: number;
+export function needsServerDecode(name: string, size: number): boolean;
