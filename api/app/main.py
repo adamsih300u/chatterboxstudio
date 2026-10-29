@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field
 
 from .audio import cut_at_fraction, stitch, to_wav_bytes
 from .config import get_settings
+from .db import Database
 from .generations import GenerationStore
+from .legacy import import_legacy
 from .models import PARAM_SPECS, VARIANTS, ModelManager, clean_params, configure_threads, resolve_variant
 from .script import parse_script_plan
 from .voices import VoiceError, VoiceStore
@@ -135,8 +137,11 @@ class Health(BaseModel):
 def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_store=None) -> FastAPI:
     settings = get_settings()
     engine = engine or ModelManager()
-    store = store or VoiceStore(settings.voices_dir)
-    gen_store = gen_store or GenerationStore(settings.generations_dir)
+    if store is None or gen_store is None:
+        db = Database(settings.database_path)
+        import_legacy(db, settings.voices_dir, settings.generations_dir)
+        store = store or VoiceStore(settings.voices_dir, db)
+        gen_store = gen_store or GenerationStore(settings.generations_dir, db)
     static_dir = static_dir if static_dir is not None else settings.static_dir
     app = FastAPI(title="Chatterbox Studio")
 
