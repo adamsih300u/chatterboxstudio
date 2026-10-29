@@ -1,5 +1,4 @@
-"""Generation store: saved audio plus the text and settings that produced it."""
-import json
+"""Generation store: saved audio on disk, text and settings in the database."""
 import re
 import shutil
 import time
@@ -7,6 +6,10 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+from sqlalchemy import select
+
+from .db import Database, GenerationRow
 
 ID_RE = re.compile(r"^[0-9]{14}-[0-9a-f]{8}$")
 
@@ -37,9 +40,24 @@ class Generation:
 
 
 class GenerationStore:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, db: Optional[Database] = None):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        # Standalone use (tests, scripts) keeps the database next to the audio.
+        self.db = db or Database(self.root / "studio.db")
+
+    def _gen(self, row: GenerationRow) -> Generation:
+        return Generation(
+            id=row.id,
+            text=row.text,
+            model=row.model,
+            voice=row.voice,
+            language=row.language,
+            created=row.created,
+            path=self.root / row.id / "audio.wav",
+            segments=row.segments or [],
+            params=row.params or {},
+        )
 
     def add(
         self,
@@ -59,50 +77,44 @@ class GenerationStore:
         gen_id = f"{time.strftime('%Y%m%d%H%M%S', time.gmtime(now))}-{uuid.uuid4().hex[:8]}"
         folder = self.root / gen_id
         folder.mkdir()
-        (folder / "audio.wav").write_bytes(data)
-        meta = {
-            "text": text,
-            "model": model,
-            "voice": voice,
-            "language": language,
-            "created": now,
-            "segments": segments or [],
-            "params": params or {},
-        }
-        (folder / "meta.json").write_text(json.dumps(meta))
-        return self._load(folder)
-
-    def _load(self, folder: Path) -> Generation:
-        meta = json.loads((folder / "meta.json").read_text())
-        return Generation(
-            id=folder.name,
-            text=meta["text"],
-            model=meta.get("model", ""),
-            voice=meta.get("voice", ""),
-            language=meta.get("language", "en"),
-            created=meta["created"],
-            path=folder / "audio.wav",
-            segments=meta.get("segments", []),
-            params=meta.get("params", {}),
-        )
+        try:
+            (folder / "audio.wav").write_bytes(data)
+            row = GenerationRow(
+                id=gen_id,
+                text=text,
+                model=model,
+                voice=voice,
+                language=language,
+                created=now,
+                segments=segments or [],
+                params=params or {},
+            )
+            with self.db.session() as s:
+                s.add(row)
+                s.commit()
+        except Exception:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        return self._gen(row)
 
     def list(self) -> list[Generation]:
-        items = [
-            self._load(f)
-            for f in self.root.iterdir()
-            if ID_RE.match(f.name) and (f / "meta.json").is_file()
-        ]
-        return sorted(items, key=lambda g: g.created, reverse=True)
+        with self.db.session() as s:
+            rows = s.scalars(select(GenerationRow).order_by(GenerationRow.created.desc()))
+            return [self._gen(r) for r in rows]
 
     def get(self, gen_id: str) -> Optional[Generation]:
         if not ID_RE.match(gen_id):
             return None
-        folder = self.root / gen_id
-        return self._load(folder) if (folder / "meta.json").is_file() else None
+        with self.db.session() as s:
+            row = s.get(GenerationRow, gen_id)
+            return self._gen(row) if row else None
 
     def delete(self, gen_id: str) -> bool:
         gen = self.get(gen_id)
         if gen is None:
             return False
-        shutil.rmtree(self.root / gen.id)
+        with self.db.session() as s:
+            s.delete(s.get(GenerationRow, gen.id))
+            s.commit()
+        shutil.rmtree(self.root / gen.id, ignore_errors=True)
         return True

@@ -1,7 +1,20 @@
 // Generation settings for one model variant, built from the spec the API reports.
 // `values` holds only the user's overrides; anything missing uses the library default.
-export default function AdvancedParams({ spec, values, onChange, onReset }) {
-  const keys = Object.keys(spec || {});
+import type { ParamSpec } from "./api";
+
+export type ParamValue = number | boolean;
+export type ParamValues = Record<string, ParamValue>;
+
+interface Props {
+  spec: Record<string, ParamSpec> | undefined;
+  values: ParamValues;
+  onChange: (key: string, value: ParamValue) => void;
+  onReset: () => void;
+}
+
+export default function AdvancedParams({ spec, values, onChange, onReset }: Props) {
+  if (!spec) return null;
+  const keys = Object.keys(spec);
   if (keys.length === 0) return null;
   return (
     <details className="advanced">
@@ -9,22 +22,22 @@ export default function AdvancedParams({ spec, values, onChange, onReset }) {
       <div className="param-grid">
         {keys.map((key) => {
           const s = spec[key];
-          const current = values[key] ?? s.default;
+          const current = values[key] ?? (s.default as ParamValue);
           return (
             <label key={key} className="param" title={s.help}>
               <span>
                 {s.label}
-                {s.type !== "bool" && <output>{current}</output>}
+                {s.type !== "bool" && <output>{String(current)}</output>}
               </span>
               {s.type === "bool" ? (
-                <input type="checkbox" checked={current} onChange={(e) => onChange(key, e.target.checked)} />
+                <input type="checkbox" checked={Boolean(current)} onChange={(e) => onChange(key, e.target.checked)} />
               ) : (
                 <input
                   type="range"
-                  min={s.min}
-                  max={s.max}
-                  step={s.step}
-                  value={current}
+                  min={s.min ?? undefined}
+                  max={s.max ?? undefined}
+                  step={s.step ?? undefined}
+                  value={Number(current)}
                   onChange={(e) => onChange(key, s.type === "int" ? parseInt(e.target.value, 10) : parseFloat(e.target.value))}
                 />
               )}

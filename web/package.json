@@ -7,14 +7,20 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/"
+    "test": "node --test src/",
+    "typecheck": "tsc --noEmit",
+    "gen:types": "openapi-typescript openapi.json -o src/api-types.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.3.1",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "~5.9",
     "vite": "^5.4.0"
   }
 }

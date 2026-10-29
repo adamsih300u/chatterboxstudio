@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import type { KeyboardEvent, TextareaHTMLAttributes } from "react";
 
 // Paralinguistic tags in the Chatterbox Turbo tokenizer (added_tokens).
 export const TURBO_TAGS = [
@@ -10,27 +11,40 @@ export const TURBO_TAGS = [
 export const CUT_TAG = "{cut}";
 
 // Find an unfinished "[xyz" or "{xyz" immediately before the caret.
-function openTag(value, caret) {
+interface OpenTag {
+  start: number;
+  kind: string;
+  query: string;
+}
+
+function openTag(value: string, caret: number): OpenTag | null {
   const m = /([[{])([^[\]{}\n]*)$/.exec(value.slice(0, caret));
   return m ? { start: caret - m[0].length, kind: m[1], query: m[2].toLowerCase() } : null;
 }
 
-export default function TagTextarea({ value, onChange, tags, voiceNames = [], ...rest }) {
-  const ref = useRef(null);
-  const [open, setOpen] = useState(null);
+interface Props extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> {
+  value: string;
+  onChange: (value: string) => void;
+  tags: string[];
+  voiceNames?: string[];
+}
+
+export default function TagTextarea({ value, onChange, tags, voiceNames = [], ...rest }: Props) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [open, setOpen] = useState<OpenTag | null>(null);
   const [index, setIndex] = useState(0);
 
   const voiceTags = voiceNames.length ? [...voiceNames.map((n) => `{${n}}`), "{default}", CUT_TAG] : [];
   const pool = open?.kind === "{" ? voiceTags : tags;
   const matches = open ? pool.filter((t) => t.slice(1).toLowerCase().startsWith(open.query)) : [];
 
-  function refresh(el) {
+  function refresh(el: HTMLTextAreaElement) {
     const found = tags.length || voiceTags.length ? openTag(el.value, el.selectionStart) : null;
     setOpen(found);
     setIndex(0);
   }
 
-  function insert(tag, start, end) {
+  function insert(tag: string, start: number, end: number) {
     const next = value.slice(0, start) + tag + " " + value.slice(end);
     const caret = start + tag.length + 1;
     onChange(next);
@@ -41,11 +55,12 @@ export default function TagTextarea({ value, onChange, tags, voiceNames = [], ..
     });
   }
 
-  function accept(tag) {
+  function accept(tag: string) {
+    if (!open || !ref.current) return;
     insert(tag, open.start, ref.current.selectionStart);
   }
 
-  function onKeyDown(e) {
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (!open || matches.length === 0) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -61,8 +76,9 @@ export default function TagTextarea({ value, onChange, tags, voiceNames = [], ..
     }
   }
 
-  function insertAtCaret(tag) {
+  function insertAtCaret(tag: string) {
     const el = ref.current;
+    if (!el) return;
     insert(tag, el.selectionStart, el.selectionEnd);
   }
 
@@ -78,9 +94,9 @@ export default function TagTextarea({ value, onChange, tags, voiceNames = [], ..
         }}
         onKeyDown={onKeyDown}
         onKeyUp={(e) => {
-          if (e.key.startsWith("Arrow") && !["ArrowUp", "ArrowDown"].includes(e.key)) refresh(e.target);
+          if (e.key.startsWith("Arrow") && !["ArrowUp", "ArrowDown"].includes(e.key)) refresh(e.currentTarget);
         }}
-        onClick={(e) => refresh(e.target)}
+        onClick={(e) => refresh(e.currentTarget)}
         onBlur={() => setTimeout(() => setOpen(null), 120)}
       />
       {open && matches.length > 0 && (

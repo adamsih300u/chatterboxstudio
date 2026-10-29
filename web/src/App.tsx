@@ -1,28 +1,31 @@
 import { useEffect, useState } from "react";
-import GenerateTab from "./GenerateTab.jsx";
-import HistoryTab from "./HistoryTab.jsx";
-import VoicesTab from "./VoicesTab.jsx";
-import { getGenerations, getModels, getVoices, loadModel } from "./api.js";
+import GenerateTab from "./GenerateTab";
+import HistoryTab from "./HistoryTab";
+import VoicesTab from "./VoicesTab";
+import { errorMessage, getGenerations, getModels, getVoices, loadModel } from "./api";
+import type { GenerationOut, ModelInfo, VoiceOut } from "./api";
 
-const TABS = [
+type TabId = "generate" | "voices" | "history";
+
+const TABS: [TabId, string][] = [
   ["generate", "Generate"],
   ["voices", "Voices"],
   ["history", "History"],
 ];
 
-function tabFromHash() {
+function tabFromHash(): TabId {
   const t = window.location.hash.slice(1);
-  return TABS.some(([id]) => id === t) ? t : "generate";
+  return TABS.find(([id]) => id === t)?.[0] ?? "generate";
 }
 
 export default function App() {
   const [tab, setTab] = useState(tabFromHash);
-  const [models, setModels] = useState([]);
+  const [models, setModels] = useState<ModelInfo[]>([]);
   const [model, setModel] = useState("");
-  const [voices, setVoices] = useState([]);
+  const [voices, setVoices] = useState<VoiceOut[]>([]);
   const [defaultVoice, setDefaultVoice] = useState("");
   const [builtinHidden, setBuiltinHidden] = useState(false);
-  const [generations, setGenerations] = useState([]);
+  const [generations, setGenerations] = useState<GenerationOut[]>([]);
   const [error, setError] = useState("");
 
   const anyLoading = models.some((m) => m.state === "loading");
@@ -45,7 +48,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refreshModels(), refreshVoices(), refreshGenerations()]).catch((e) => setError(e.message));
+    Promise.all([refreshModels(), refreshVoices(), refreshGenerations()]).catch((e) => setError(errorMessage(e)));
   }, []);
 
   useEffect(() => {
@@ -67,7 +70,7 @@ export default function App() {
       await loadModel(model);
       await refreshModels();
     } catch (e) {
-      setError(e.message);
+      setError(errorMessage(e));
     }
   }
 
@@ -109,7 +112,7 @@ export default function App() {
           setError={setError}
         />
       </div>
-      {tab === "voices" && <VoicesTab voices={voices} defaultVoice={defaultVoice} builtinHidden={builtinHidden} refreshVoices={refreshVoices} setError={setError} />}
+      {tab === "voices" && <VoicesTab model={model} voices={voices} defaultVoice={defaultVoice} builtinHidden={builtinHidden} refreshVoices={refreshVoices} setError={setError} />}
       {tab === "history" && (
         <HistoryTab generations={generations} refreshGenerations={refreshGenerations} setError={setError} />
       )}

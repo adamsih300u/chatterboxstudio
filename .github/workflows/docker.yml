@@ -45,7 +45,13 @@ jobs:
         working-directory: web
         run: |
           npm ci --no-audit --no-fund
+          npm run typecheck
           npm test
+      - name: API types are in sync with openapi.json
+        working-directory: web
+        run: |
+          npm run gen:types
+          git diff --exit-code -- src/api-types.ts
 
   build:
     name: Build ${{ matrix.platform }}

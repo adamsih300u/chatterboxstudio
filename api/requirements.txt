@@ -5,5 +5,8 @@ torchaudio==2.6.0
 chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@5de7a54aa4e5e2baadb0182dde554908b48b85c2
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
+pydantic-settings>=2.7,<3
+sqlalchemy>=2.0,<3
+alembic>=1.13,<2
 python-multipart>=0.0.9
 numpy
