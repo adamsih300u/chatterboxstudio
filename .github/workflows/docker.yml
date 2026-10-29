@@ -128,7 +128,7 @@ jobs:
 
       - name: Build (push by digest on non-PR events)
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
