@@ -302,10 +302,7 @@ export interface components {
     schemas: {
         /** Body_add_generation_api_generations_post */
         Body_add_generation_api_generations_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /**
              * Language
@@ -327,10 +324,7 @@ export interface components {
         };
         /** Body_add_voice_api_voices_post */
         Body_add_voice_api_voices_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Name */
             name: string;
@@ -344,10 +338,7 @@ export interface components {
         };
         /** Body_update_voice_api_voices__voice_id__put */
         Body_update_voice_api_voices__voice_id__put: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Original */
             original?: string | null;
@@ -588,6 +579,10 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
