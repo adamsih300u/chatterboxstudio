@@ -149,7 +149,7 @@ export default function GenerateTab({ models, model, setModel, voices, defaultVo
         placeholder="Type something for Chatterbox to say. Type { for voices (put {cut} inside a line to chop it off mid-phrase, {cut 200} to let the next voice talk over it by 200 ms). On Turbo, type [ for sound tags."
         value={text}
         onChange={setText}
-        tags={model === "turbo" ? TURBO_TAGS : []}
+        tags={model === "turbo" || model === "nano" ? TURBO_TAGS : []}
         voiceNames={voices.map((v) => v.name)}
       />
 

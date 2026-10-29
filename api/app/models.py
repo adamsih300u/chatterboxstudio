@@ -11,15 +11,20 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
+# turbo_family: loaded through upstream's ChatterboxTurboTTS (Nano is the same class with nano=True),
+# which takes Turbo's generate() arguments and conditionals API.
 VARIANTS = {
-    "turbo": {"label": "Turbo", "multilingual": False},
-    "standard": {"label": "Standard", "multilingual": False},
-    "multilingual": {"label": "Multilingual", "multilingual": True},
+    "turbo": {"label": "Turbo", "multilingual": False, "turbo_family": True},
+    "nano": {"label": "Nano", "multilingual": False, "turbo_family": True},
+    "standard": {"label": "Standard", "multilingual": False, "turbo_family": False},
+    "multilingual": {"label": "Multilingual", "multilingual": True, "turbo_family": False},
 }
 
 ALIASES = {
     "turbo": "turbo",
     "chatterbox-turbo": "turbo",
+    "nano": "nano",
+    "chatterbox-nano": "nano",
     "standard": "standard",
     "chatterbox": "standard",
     "multilingual": "multilingual",
@@ -47,16 +52,21 @@ def _classic() -> dict:
 
 
 # Per-variant generate() arguments, taken from the stock library signatures.
-# Turbo ignores exaggeration and cfg_weight upstream, so they are not offered.
-PARAM_SPECS = {
-    "turbo": {
+# Turbo and Nano ignore exaggeration and cfg_weight upstream, so they are not offered.
+def _turbo_family() -> dict:
+    return {
         "temperature": _TEMP,
         "repetition_penalty": _REP,
         "top_k": _p("top_k", 1, 1000, 1000, 1, "Sample from only the k most likely tokens.", "int"),
         "top_p": _p("top_p", 0.0, 1.0, 0.95, 0.01, "Nucleus sampling cutoff."),
         "min_p": _p("min_p", 0.0, 1.0, 0.0, 0.01, "Drops very unlikely tokens."),
         "norm_loudness": {"label": "Normalize loudness", "type": "bool", "default": True, "help": "Level the output volume."},
-    },
+    }
+
+
+PARAM_SPECS = {
+    "turbo": _turbo_family(),
+    "nano": _turbo_family(),
     "standard": _classic(),
     "multilingual": _classic(),
 }
@@ -130,6 +140,10 @@ def _load_variant(variant: str, device: str) -> Any:
         from chatterbox.tts_turbo import ChatterboxTurboTTS
 
         return ChatterboxTurboTTS.from_pretrained(device=device)
+    if variant == "nano":
+        from chatterbox.tts_turbo import ChatterboxTurboTTS
+
+        return ChatterboxTurboTTS.from_pretrained(device=device, nano=True)
     if variant == "standard":
         from chatterbox.tts import ChatterboxTTS
 
@@ -245,7 +259,7 @@ class ModelManager:
             if default is not None:
                 model.conds = default
             return
-        turbo = variant == "turbo"
+        turbo = VARIANTS[variant]["turbo_family"]
         norm = kwargs.get("norm_loudness", True) if turbo else None
         st = Path(ref_path).stat()
         key = (variant, str(ref_path), st.st_mtime_ns, st.st_size, norm)

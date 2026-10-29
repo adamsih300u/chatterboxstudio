@@ -336,6 +336,7 @@
           "id": {
             "enum": [
               "turbo",
+              "nano",
               "standard",
               "multilingual"
             ],

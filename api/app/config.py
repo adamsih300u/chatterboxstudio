@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-VariantName = Literal["turbo", "standard", "multilingual"]
+VariantName = Literal["turbo", "nano", "standard", "multilingual"]
 
 
 class Settings(BaseSettings):

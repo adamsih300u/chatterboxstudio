@@ -476,7 +476,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "turbo" | "standard" | "multilingual";
+            id: "turbo" | "nano" | "standard" | "multilingual";
             /** Label */
             label: string;
             /** Loaded */

@@ -2,7 +2,7 @@
 
 A FastAPI + React front end over the unmodified [resemble-ai/chatterbox](https://github.com/resemble-ai/chatterbox) library.
 
-- Text to speech, with the model variant (Turbo, standard, multilingual) chosen in the UI. Variants lazy-load on first use.
+- Text to speech, with the model variant (Turbo, Nano, standard, multilingual) chosen in the UI. Variants lazy-load on first use.
 - Voice cloning from an uploaded reference clip, plus a saved voice library.
 - OpenAI-compatible `POST /v1/audio/speech` (WAV output).
 
@@ -24,9 +24,11 @@ The UI disables Generate until the selected model is loaded. An unloaded model s
 
 Download weights ahead of time into the cache volume (one-off, nothing is baked into the image):
 
-    docker compose run --rm chatterbox-studio python -m app.prefetch turbo standard multilingual
+    docker compose run --rm chatterbox-studio python -m app.prefetch turbo nano standard multilingual
 
-With no arguments every variant is fetched. To also load models into memory at startup, set
+With no arguments every variant is fetched. Nano (110M, `ResembleAI/chatterbox-nano`) is the smallest
+model and suits a Pi: it is upstream's `ChatterboxTurboTTS` loaded with `nano=True`, so it takes the
+same settings and `[laugh]`-style tags as Turbo. Select it with `model: "nano"` on the API. To also load models into memory at startup, set
 `PRELOAD_VARIANTS` (comma-separated, default `turbo` in `docker-compose.yml`). Each loaded
 model uses RAM, so keep the list short on a Pi.
 
