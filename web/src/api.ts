@@ -222,3 +222,118 @@ export async function synthesize({
     seed: Number.isFinite(used) ? used : null,
   };
 }
+
+// {cut} lines can't be streamed: whether a line is cut, and how the next one overlaps, is only known once it is done.
+const CUT_IN_SCRIPT = /\{\s*cut(?:\s+\d{1,6})?\s*\}/i;
+export const canStream = (text: string): boolean => !CUT_IN_SCRIPT.test(text);
+
+const WAV_HEADER = 44;
+
+function wavFromPcm(parts: Uint8Array[], length: number, rate: number): Blob {
+  const head = new DataView(new ArrayBuffer(WAV_HEADER));
+  const tag = (at: number, s: string) => [...s].forEach((c, i) => head.setUint8(at + i, c.charCodeAt(0)));
+  tag(0, "RIFF");
+  head.setUint32(4, 36 + length, true);
+  tag(8, "WAVEfmt ");
+  head.setUint32(16, 16, true);
+  head.setUint16(20, 1, true);
+  head.setUint16(22, 1, true);
+  head.setUint32(24, rate, true);
+  head.setUint32(28, rate * 2, true);
+  head.setUint16(32, 2, true);
+  head.setUint16(34, 16, true);
+  tag(36, "data");
+  head.setUint32(40, length, true);
+  return new Blob([head, ...(parts as BlobPart[])], { type: "audio/wav" });
+}
+
+// Same request as synthesize(), but the audio is played as each sentence arrives.
+// Resolves with the whole clip once the stream ends (and the take is in History when save is on).
+export async function synthesizeStreaming(
+  { text, voice, model, language, params, pauseMs, save, seed }: SynthesizeArgs,
+  onFirstAudio?: () => void,
+): Promise<{ blob: Blob; duration: number; seed: number | null }> {
+  const res = await check(
+    await fetch("/api/tts/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voice: voice || null, model, language, params, pause_ms: pauseMs, save, seed: seed ?? null }),
+    })
+  );
+  if (!res.body) throw new Error("This browser can't read a streamed response");
+  const reader = res.body.getReader();
+  const parts: Uint8Array[] = [];
+  let pcmBytes = 0;
+  let head = new Uint8Array(0);
+  let spare: Uint8Array | null = null; // an odd trailing byte waiting for its pair
+  let ctx: AudioContext | null = null;
+  let rate = 0;
+  let next = 0;
+
+  const play = (pcm: Uint8Array) => {
+    if (!ctx) return;
+    const samples = new Float32Array(pcm.length >> 1);
+    const view = new DataView(pcm.buffer, pcm.byteOffset, samples.length * 2);
+    for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
+    const buf = ctx.createBuffer(1, samples.length, rate);
+    buf.copyToChannel(samples, 0);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    // If generation fell behind playback, restart with a short lead rather than at a stale time.
+    next = Math.max(next, ctx.currentTime + 0.08);
+    src.start(next);
+    next += buf.duration;
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      let chunk = value;
+      if (!ctx) {
+        const joined = new Uint8Array(head.length + chunk.length);
+        joined.set(head);
+        joined.set(chunk, head.length);
+        if (joined.length < WAV_HEADER) {
+          head = joined;
+          continue;
+        }
+        rate = new DataView(joined.buffer).getUint32(24, true);
+        ctx = new AudioContext({ sampleRate: rate });
+        next = ctx.currentTime + 0.15;
+        chunk = joined.subarray(WAV_HEADER);
+        onFirstAudio?.();
+      }
+      if (spare) {
+        const joined = new Uint8Array(chunk.length + 1);
+        joined[0] = spare[0];
+        joined.set(chunk, 1);
+        chunk = joined;
+        spare = null;
+      }
+      if (chunk.length % 2) {
+        spare = chunk.slice(chunk.length - 1);
+        chunk = chunk.subarray(0, chunk.length - 1);
+      }
+      if (!chunk.length) continue;
+      const own = chunk.slice(); // the read buffer may be reused
+      parts.push(own);
+      pcmBytes += own.length;
+      play(own);
+    }
+  } catch (e) {
+    ctx?.close().catch(() => {});
+    throw e;
+  }
+  if (ctx) {
+    const c = ctx;
+    window.setTimeout(() => c.close().catch(() => {}), Math.max(0, next - c.currentTime) * 1000 + 500);
+  }
+  const used = parseInt(res.headers.get("X-Seed") ?? "", 10);
+  return {
+    blob: wavFromPcm(parts, pcmBytes, rate),
+    duration: rate ? pcmBytes / 2 / rate : 0,
+    seed: Number.isFinite(used) ? used : null,
+  };
+}

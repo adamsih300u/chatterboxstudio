@@ -1,15 +1,18 @@
 import hashlib
+import itertools
 import json
 import secrets
 from pathlib import Path
 from typing import Any, Literal, Optional
 
+import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, model_validator
 
-from .audio import cut_at_fraction, stitch, to_wav_bytes
+from .audio import cut_at_fraction, pcm16_bytes, stitch, streaming_wav_header, to_wav_bytes
+from .chunking import split_text
 from .config import VariantName, get_settings
 from .convert import ConvertError, decode, encode, get_format, wav_duration
 from .db import Database
@@ -22,6 +25,7 @@ from .voices import VoiceError, VoiceNotFound, VoiceStore
 NO_VOICE = {"", "default", "none"}
 MAX_SEED = 2**32 - 1
 MAX_SEGMENTS = 50
+SENTENCE_GAP_MS = 150  # silence between sentences of one line when streaming
 MAX_REGIONS = 100
 
 
@@ -207,19 +211,10 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
     static_dir = static_dir if static_dir is not None else settings.static_dir
     app = FastAPI(title="Chatterbox Studio")
 
-    def render(
-        model: Optional[str],
-        segments: list[tuple[str, Optional[str]]],
-        language: str,
-        params: dict,
-        pause_ms: int = 300,
-        cuts: Optional[dict] = None,
-        seed: Optional[int] = None,
-    ) -> tuple[bytes, str, list[dict]]:
-        """Generate every segment, stitch them, and return (wav, variant, resolved segments).
-
-        Everything is validated before the first (slow) generation starts.
-        """
+    def prepare(
+        model: Optional[str], segments: list[tuple[str, Optional[str]]], params: dict
+    ) -> tuple[str, dict, list[dict]]:
+        """Validate a request and resolve it to (variant, clean params, plan). Raises before any generation."""
         if not segments or any(not text.strip() for text, _ in segments):
             raise HTTPException(400, "text is empty")
         if len(segments) > MAX_SEGMENTS:
@@ -240,6 +235,22 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
                     raise HTTPException(404, f"voice '{voice}' not found")
                 ref, label = found.path, getattr(found, "name", voice)
             plan.append({"text": text, "voice": label, "ref": ref})
+        return variant, clean, plan
+
+    def render(
+        model: Optional[str],
+        segments: list[tuple[str, Optional[str]]],
+        language: str,
+        params: dict,
+        pause_ms: int = 300,
+        cuts: Optional[dict] = None,
+        seed: Optional[int] = None,
+    ) -> tuple[bytes, str, list[dict]]:
+        """Generate every segment, stitch them, and return (wav, variant, resolved segments).
+
+        Everything is validated before the first (slow) generation starts.
+        """
+        variant, clean, plan = prepare(model, segments, params)
         cuts = cuts or {}
         chunks, rate = [], 0
         for i, item in enumerate(plan):
@@ -294,17 +305,65 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         wav, variant, plan = render(req.model, segs, req.language, req.params, req.pause_ms, cuts, seed)
         headers = duration_headers(wav, {"X-Seed": str(seed)})
         if req.save:
-            if len(plan) == 1:
-                script = plan[0]["text"]
-            else:
-                script = "\n".join(f"{p['voice'] or 'Default'}: {p['text']}" for p in plan)
-            names = list(dict.fromkeys(p["voice"] for p in plan if p["voice"]))
-            clean = clean_params(variant, req.params)
-            gen = gen_store.add(
-                script, variant, ", ".join(names), req.language, wav, segments=plan, params=clean, seed=seed
-            )
-            headers["X-Generation-Id"] = gen.id
+            headers["X-Generation-Id"] = save_take(req, variant, plan, wav, seed)
         return Response(wav, media_type="audio/wav", headers=headers)
+
+    def save_take(req: TTSRequest, variant: str, plan: list[dict], wav: bytes, seed: int) -> str:
+        if len(plan) == 1:
+            script = plan[0]["text"]
+        else:
+            script = "\n".join(f"{p['voice'] or 'Default'}: {p['text']}" for p in plan)
+        names = list(dict.fromkeys(p["voice"] for p in plan if p["voice"]))
+        gen = gen_store.add(
+            script, variant, ", ".join(names), req.language, wav,
+            segments=plan, params=clean_params(variant, req.params), seed=seed,
+        )
+        return gen.id
+
+    @app.post("/api/tts/stream")
+    def tts_stream(req: TTSRequest):
+        """Same request as /api/tts, answered as a WAV that arrives sentence by sentence.
+
+        Scripts with {cut} are refused: a cut line is only known once it is fully generated
+        and the next line may overlap it. The take is saved to History when the stream finishes.
+        """
+        if req.segments:
+            segs, cuts = [(s.text, s.voice or req.voice) for s in req.segments], {}
+        else:
+            segs, cuts = parse_script_plan(req.text, req.voice)
+        if cuts:
+            raise HTTPException(400, "scripts with {cut} can't be streamed; use /api/tts")
+        seed = req.seed if req.seed is not None else secrets.randbelow(MAX_SEED + 1)
+        variant, clean, plan = prepare(req.model, segs, req.params)
+        pause = min(max(req.pause_ms, 0), 5000)
+
+        def body():
+            kept, rate, started = [], 0, False
+            for si, item in enumerate(plan):
+                pieces = split_text(item["text"]) or [item["text"]]
+                for pi, piece in enumerate(pieces):
+                    samples, rate = engine.synthesize(
+                        variant, piece, ref_path=item["ref"], language=req.language, params=clean, seed=seed
+                    )
+                    samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+                    gap_ms = pause if (pi == 0 and si > 0) else (SENTENCE_GAP_MS if pi > 0 else 0)
+                    if gap_ms:
+                        samples = np.concatenate([np.zeros(int(rate * gap_ms / 1000), dtype=np.float32), samples])
+                    kept.append(samples)
+                    if not started:
+                        started = True
+                        yield streaming_wav_header(rate)
+                    yield pcm16_bytes(samples)
+            # Only reached when the client stayed to the end.
+            if req.save and kept:
+                save_take(req, variant, plan, to_wav_bytes(np.concatenate(kept), rate), seed)
+
+        stream = body()
+        first = next(stream)  # a failure before any audio is a normal error response
+        first += next(stream)  # header and first sentence go out together
+        return StreamingResponse(
+            itertools.chain([first], stream), media_type="audio/wav", headers={"X-Seed": str(seed)}
+        )
 
     @app.post("/v1/audio/speech")
     def speech(req: SpeechRequest):

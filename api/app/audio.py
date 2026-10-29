@@ -106,6 +106,25 @@ def stitch(
     return out
 
 
+def pcm16_bytes(samples: np.ndarray) -> bytes:
+    data = np.asarray(samples, dtype=np.float32).reshape(-1)
+    return (np.clip(data, -1.0, 1.0) * 32767).astype("<i2").tobytes()
+
+
+def streaming_wav_header(sample_rate: int) -> bytes:
+    """44-byte mono 16-bit WAV header for audio whose length is not known yet.
+
+    The size fields hold 0xFFFFFFFF, which streaming readers treat as "until the connection ends".
+    """
+    import struct
+
+    return (
+        b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVEfmt "
+        + struct.pack("<IHHIIHH", 16, 1, 1, sample_rate, sample_rate * 2, 2, 16)
+        + b"data" + struct.pack("<I", 0xFFFFFFFF)
+    )
+
+
 def to_wav_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
     """Encode mono float samples in [-1, 1] as 16-bit PCM WAV."""
     data = np.asarray(samples, dtype=np.float32).reshape(-1)

@@ -1235,6 +1235,43 @@
         "summary": "Tts"
       }
     },
+    "/api/tts/stream": {
+      "post": {
+        "description": "Same request as /api/tts, answered as a WAV that arrives sentence by sentence.\n\nScripts with {cut} are refused: a cut line is only known once it is fully generated\nand the next line may overlap it. The take is saved to History when the stream finishes.",
+        "operationId": "tts_stream_api_tts_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TTSRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tts Stream"
+      }
+    },
     "/api/voices": {
       "get": {
         "operationId": "list_voices_api_voices_get",
