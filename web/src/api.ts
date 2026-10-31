@@ -184,6 +184,8 @@ export interface SynthesizeArgs {
   save?: boolean;
   // Omit for a random take; the seed that was used comes back either way.
   seed?: number | null;
+  // Abort to cancel: the server stops generating and keeps nothing.
+  signal?: AbortSignal;
 }
 
 // text may hold inline {Voice} tags; the server splits it per voice and stitches the clips.
@@ -197,10 +199,12 @@ export async function synthesize({
   pauseMs,
   save,
   seed,
+  signal,
 }: SynthesizeArgs): Promise<{ blob: Blob; id: string | null; duration: number | null; seed: number | null }> {
   const res = await check(
     await fetch("/api/tts", {
       method: "POST",
+      signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text,
@@ -250,12 +254,13 @@ function wavFromPcm(parts: Uint8Array[], length: number, rate: number): Blob {
 // Same request as synthesize(), but the audio is played as each sentence arrives.
 // Resolves with the whole clip once the stream ends (and the take is in History when save is on).
 export async function synthesizeStreaming(
-  { text, voice, model, language, params, pauseMs, save, seed }: SynthesizeArgs,
+  { text, voice, model, language, params, pauseMs, save, seed, signal }: SynthesizeArgs,
   onFirstAudio?: () => void,
 ): Promise<{ blob: Blob; duration: number; seed: number | null }> {
   const res = await check(
     await fetch("/api/tts/stream", {
       method: "POST",
+      signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, voice: voice || null, model, language, params, pause_ms: pauseMs, save, seed: seed ?? null }),
     })
