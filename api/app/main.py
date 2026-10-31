@@ -245,6 +245,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         pause_ms: int = 300,
         cuts: Optional[dict] = None,
         seed: Optional[int] = None,
+        by_sentence: bool = True,
     ) -> tuple[bytes, str, list[dict]]:
         """Generate every segment, stitch them, and return (wav, variant, resolved segments).
 
@@ -254,9 +255,18 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         cuts = cuts or {}
         chunks, rate = [], 0
         for i, item in enumerate(plan):
-            samples, rate = engine.synthesize(
-                variant, item["text"], ref_path=item["ref"], language=language, params=clean, seed=seed
-            )
+            # One sentence per call, so a bad draw ruins a sentence and not the whole line.
+            parts = []
+            pieces = split_text(item["text"], cut_first=False) if by_sentence else []
+            for piece in pieces or [item["text"]]:
+                piece_samples, rate = engine.synthesize(
+                    variant, piece, ref_path=item["ref"], language=language, params=clean, seed=seed
+                )
+                piece_samples = np.asarray(piece_samples, dtype=np.float32).reshape(-1)
+                if parts:
+                    parts.append(np.zeros(int(rate * SENTENCE_GAP_MS / 1000), dtype=np.float32))
+                parts.append(piece_samples)
+            samples = parts[0] if len(parts) == 1 else np.concatenate(parts)
             cut = cuts.get(i)
             if cut is not None and cut.keep is not None:
                 samples = cut_at_fraction(samples, rate, cut.keep)
@@ -540,7 +550,9 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         if cached.is_file():
             cached_wav = cached.read_bytes()
             return Response(cached_wav, media_type="audio/wav", headers=duration_headers(cached_wav, {"X-Preview-Cached": "true"}))
-        wav, _, _ = render(variant, [(settings.preview_text, voice.id)], req.language, req.params)
+        wav, _, _ = render(
+            variant, [(settings.preview_text, voice.id)], req.language, req.params, by_sentence=False
+        )
         store.save_preview(voice, key, wav)
         return Response(wav, media_type="audio/wav", headers=duration_headers(wav, {"X-Preview-Cached": "false"}))
 

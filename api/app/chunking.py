@@ -11,12 +11,12 @@ def _words(s: str) -> int:
     return len(s.split())
 
 
-def split_text(text: str) -> list[str]:
-    """Sentences in order, with tiny ones merged and a long first one cut at a comma."""
+def split_text(text: str, cut_first: bool = True) -> list[str]:
+    """Sentences in order, with tiny ones merged and, if cut_first, a long first one cut at a comma."""
     sentences = [s.strip() for s in SENTENCE_END.split(text.strip()) if s.strip()]
     if not sentences:
         return []
-    if _words(sentences[0]) > FIRST_MAX_WORDS:
+    if cut_first and _words(sentences[0]) > FIRST_MAX_WORDS:
         parts = [p.strip() for p in CLAUSE_END.split(sentences[0]) if p.strip()]
         # Cut at the first comma that leaves a usable opening.
         head = ""
