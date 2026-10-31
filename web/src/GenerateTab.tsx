@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AdvancedParams from "./AdvancedParams";
 import type { ParamValue, ParamValues } from "./AdvancedParams";
 import TagTextarea, { TURBO_TAGS } from "./TagTextarea";
@@ -59,6 +59,7 @@ export default function GenerateTab({ reuse, models, model, setModel, voices, de
   const [format, setFormat] = useExportFormat();
   const [converting, setConverting] = useState(false);
   const [busy, setBusy] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   // Empty means a random take each time; a number repeats that take for the same text and settings.
   const [seedText, setSeedText] = useState("");
   const [lastSeed, setLastSeed] = useState<number | null>(null);
@@ -88,12 +89,22 @@ export default function GenerateTab({ reuse, models, model, setModel, voices, de
     setOverrides((o) => ({ ...o, [model]: { ...(o[model] || {}), [key]: value } }));
   }
 
+  // Stop cancels everything: the server quits at the next sentence, nothing reaches History, and no audio is kept.
+  function onStop() {
+    abortRef.current?.abort();
+  }
+
+  // Leaving the page mid-take cancels it too, so it can't finish unseen and land in History.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   async function onGenerate() {
     setError("");
     setBusy(true);
+    const abort = new AbortController();
+    abortRef.current = abort;
     try {
       const wanted = /^\d+$/.test(seedText.trim()) ? Number(seedText.trim()) : null;
-      const args = { text, voice, model, language, params: values, pauseMs, save: keep, seed: wanted };
+      const args = { text, voice, model, language, params: values, pauseMs, save: keep, seed: wanted, signal: abort.signal };
       const streamed = stream && canStream(text);
       const { blob, duration, seed } = streamed
         ? await synthesizeStreaming(args, () => setHearing(true))
@@ -108,8 +119,9 @@ export default function GenerateTab({ reuse, models, model, setModel, voices, de
       refreshModels().catch(() => {});
       if (keep) refreshGenerations().catch(() => {});
     } catch (e) {
-      setError(errorMessage(e));
+      if (!abort.signal.aborted) setError(errorMessage(e));
     } finally {
+      if (abortRef.current === abort) abortRef.current = null;
       setBusy(false);
       setHearing(false);
     }
@@ -207,6 +219,11 @@ export default function GenerateTab({ reuse, models, model, setModel, voices, de
         <button onClick={onGenerate} disabled={!canGenerate}>
           {busy ? (hearing ? "Playing..." : "Generating...") : "Generate"}
         </button>
+        {busy && (
+          <button type="button" className="stop" onClick={onStop} title="Cancel this take. Nothing is kept, not even a partial one.">
+            Stop
+          </button>
+        )}
         <label className="inline">
           <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />
           Keep in History

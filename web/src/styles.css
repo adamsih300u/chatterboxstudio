@@ -369,3 +369,8 @@ label.inline {
 input.seed {
   width: 8.5rem;
 }
+
+button.stop {
+  border-color: #b3261e;
+  color: #b3261e;
+}

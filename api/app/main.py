@@ -1,12 +1,15 @@
+import asyncio
 import hashlib
 import itertools
 import json
 import secrets
+import threading
 from pathlib import Path
 from typing import Any, Literal, Optional
 
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, model_validator
@@ -27,6 +30,10 @@ MAX_SEED = 2**32 - 1
 MAX_SEGMENTS = 50
 SENTENCE_GAP_MS = 150  # silence between sentences of one line when streaming
 MAX_REGIONS = 100
+
+
+class Cancelled(Exception):
+    """The client went away mid-take; stop and keep nothing."""
 
 
 VoiceRef = Field(default=None, max_length=64)
@@ -246,6 +253,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         cuts: Optional[dict] = None,
         seed: Optional[int] = None,
         by_sentence: bool = True,
+        cancel: Optional[threading.Event] = None,
     ) -> tuple[bytes, str, list[dict]]:
         """Generate every segment, stitch them, and return (wav, variant, resolved segments).
 
@@ -259,6 +267,8 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
             parts = []
             pieces = split_text(item["text"], cut_first=False) if by_sentence else []
             for piece in pieces or [item["text"]]:
+                if cancel is not None and cancel.is_set():
+                    raise Cancelled()
                 piece_samples, rate = engine.synthesize(
                     variant, piece, ref_path=item["ref"], language=language, params=clean, seed=seed
                 )
@@ -306,17 +316,39 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
             raise HTTPException(404, str(e))
 
     @app.post("/api/tts")
-    def tts(req: TTSRequest):
+    async def tts(req: TTSRequest, request: Request):
         if req.segments:
             segs, cuts = [(s.text, s.voice or req.voice) for s in req.segments], {}
         else:
             segs, cuts = parse_script_plan(req.text, req.voice)
         seed = req.seed if req.seed is not None else secrets.randbelow(MAX_SEED + 1)
-        wav, variant, plan = render(req.model, segs, req.language, req.params, req.pause_ms, cuts, seed)
-        headers = duration_headers(wav, {"X-Seed": str(seed)})
-        if req.save:
-            headers["X-Generation-Id"] = save_take(req, variant, plan, wav, seed)
-        return Response(wav, media_type="audio/wav", headers=headers)
+        # A closed connection (the Stop button) cancels the take: generation stops at the next
+        # sentence and nothing is saved to History, even if most of it was already done.
+        cancel = threading.Event()
+
+        def work():
+            wav, variant, plan = render(req.model, segs, req.language, req.params, req.pause_ms, cuts, seed, cancel=cancel)
+            headers = duration_headers(wav, {"X-Seed": str(seed)})
+            if req.save:
+                if cancel.is_set():
+                    raise Cancelled()
+                headers["X-Generation-Id"] = save_take(req, variant, plan, wav, seed)
+            return Response(wav, media_type="audio/wav", headers=headers)
+
+        async def watch():
+            while not cancel.is_set():
+                if await request.is_disconnected():
+                    cancel.set()
+                    return
+                await asyncio.sleep(0.2)
+
+        watcher = asyncio.create_task(watch())
+        try:
+            return await run_in_threadpool(work)
+        except Cancelled:
+            return Response(status_code=499)
+        finally:
+            watcher.cancel()
 
     def save_take(req: TTSRequest, variant: str, plan: list[dict], wav: bytes, seed: int) -> str:
         if len(plan) == 1:
