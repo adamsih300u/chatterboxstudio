@@ -9,7 +9,7 @@ COPY web/ ./
 RUN npm run build
 
 # ---- Stage 2: Python deps (git is needed for the pinned upstream install) ----
-FROM python:3.11-slim AS deps
+FROM python:3.15-slim AS deps
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -19,7 +19,7 @@ COPY api/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # ---- Stage 3: runtime ----
-FROM python:3.11-slim AS runtime
+FROM python:3.15-slim AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libsndfile1 ffmpeg \
     && rm -rf /var/lib/apt/lists/*
