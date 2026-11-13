@@ -482,10 +482,7 @@ export interface components {
     schemas: {
         /** Body_add_generation_api_generations_post */
         Body_add_generation_api_generations_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /**
              * Language
@@ -507,18 +504,12 @@ export interface components {
         };
         /** Body_add_source_api_voices__voice_id__sources_post */
         Body_add_source_api_voices__voice_id__sources_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_add_voice_api_voices_post */
         Body_add_voice_api_voices_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Name */
             name: string;
@@ -532,18 +523,12 @@ export interface components {
         };
         /** Body_convert_api_convert_post */
         Body_convert_api_convert_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_convert_voice_api_convert_voice_post */
         Body_convert_voice_api_convert_voice_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /**
              * Lead In Ms
@@ -565,18 +550,12 @@ export interface components {
         };
         /** Body_decode_audio_api_audio_decode_post */
         Body_decode_audio_api_audio_decode_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_put_mood_api_voices__voice_id__moods__mood_name__put */
         Body_put_mood_api_voices__voice_id__moods__mood_name__put: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /**
              * Regions
@@ -586,10 +565,7 @@ export interface components {
         };
         /** Body_update_voice_api_voices__voice_id__put */
         Body_update_voice_api_voices__voice_id__put: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Original */
             original?: string | null;
@@ -872,6 +848,10 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
