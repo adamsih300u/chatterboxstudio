@@ -10,6 +10,11 @@ export function normalizeRegions(regions: Region[], duration: number): Region[];
 export const GAP_S: number;
 export function concatSamples(parts: Float32Array<ArrayBuffer>[], rate: number, gapS?: number): { samples: Float32Array<ArrayBuffer>; bounds: Region[] };
 export function splitAtBounds(regions: Region[], bounds: Region[]): Region[];
+export interface FilePart extends Region {
+  file: number;
+}
+export function splitByFile(regions: Region[], bounds: Region[]): FilePart[];
+export function toTimeline(parts: FilePart[], bounds: Region[]): Region[];
 export function totalDuration(regions: Region[]): number;
 export function joinRegions(samples: Float32Array<ArrayBuffer>, rate: number, regions: Region[], fadeS?: number): Float32Array<ArrayBuffer>;
 export function resultToSourceTime(regions: Region[], t: number): number;

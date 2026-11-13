@@ -6,6 +6,8 @@ import {
   clampView,
   concatSamples,
   splitAtBounds,
+  splitByFile,
+  toTimeline,
   encodeWav,
   joinRegions,
   keepOnlyRegions,
@@ -170,4 +172,37 @@ test("keepOnlyRegions keeps the selected audio and re-bases the regions", () => 
 
 test("wavBytes counts a 44-byte header and 2 bytes a sample", () => {
   assert.equal(wavBytes(1000), 2044);
+});
+
+test("splitByFile makes regions relative to their own file and cuts at file edges", () => {
+  const bounds = [
+    { start: 0, end: 10 },
+    { start: 10.25, end: 20 },
+  ];
+  const out = splitByFile([{ start: 2, end: 4 }, { start: 8, end: 12 }, { start: 15, end: 16 }], bounds);
+  assert.deepEqual(out, [
+    { file: 0, start: 2, end: 4 },
+    { file: 0, start: 8, end: 10 },
+    { file: 1, start: 0, end: 1.75 },
+    { file: 1, start: 4.75, end: 5.75 },
+  ]);
+});
+
+test("splitByFile drops the silence between files and slivers", () => {
+  const bounds = [{ start: 0, end: 10 }, { start: 10.25, end: 20 }];
+  assert.deepEqual(splitByFile([{ start: 10.01, end: 10.2 }], bounds), []);
+  assert.deepEqual(splitByFile([{ start: 9.99, end: 10.28 }], bounds), []);
+});
+
+test("toTimeline reverses splitByFile and ignores unknown files", () => {
+  const bounds = [{ start: 0, end: 10 }, { start: 10.25, end: 20 }];
+  const parts = [{ file: 0, start: 2, end: 4 }, { file: 1, start: 1, end: 3 }, { file: 5, start: 0, end: 1 }];
+  const line = toTimeline(parts, bounds);
+  assert.deepEqual(line, [{ start: 2, end: 4 }, { start: 11.25, end: 13.25 }]);
+  assert.deepEqual(splitByFile(line, bounds), parts.slice(0, 2));
+});
+
+test("toTimeline keeps a region inside its file", () => {
+  const bounds = [{ start: 0, end: 5 }];
+  assert.deepEqual(toTimeline([{ file: 0, start: 4, end: 9 }], bounds), [{ start: 4, end: 5 }]);
 });

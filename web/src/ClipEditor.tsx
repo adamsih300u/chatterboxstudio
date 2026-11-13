@@ -6,6 +6,7 @@ import {
   lengthWarning,
   formatDuration,
   normalizeRegions,
+  toTimeline,
   panView,
   peaks,
   resultToSourceTime,
@@ -15,7 +16,7 @@ import {
   needsServerDecode,
 } from "./audioEdit.js";
 import { SERVER_DECODE_SECONDS, decodeOnServer } from "./api";
-import type { Region, View } from "./audioEdit.js";
+import type { FilePart, Region, View } from "./audioEdit.js";
 
 const RATE = 24000;
 const HEIGHT = 120;
@@ -23,12 +24,14 @@ const EDGE_PX = 6;
 const WHEEL_ZOOM_PER_PX = 0.0015;
 const BUTTON_ZOOM = 1.6;
 
-// Waveform with keep-regions. Reports { samples, rate, regions } to onChange,
-// or null when the file cannot be decoded.
+// Waveform with keep-regions. Reports { samples, rate, regions, bounds } to onChange,
+// or null when the file cannot be decoded. Regions and bounds are on the combined timeline.
 export interface ClipEdit {
   samples: Float32Array<ArrayBuffer>;
   rate: number;
   regions: Region[];
+  // Where each file sits on the timeline, in file order (see splitByFile to map regions back).
+  bounds: Region[];
 }
 
 interface Decoded {
@@ -59,6 +62,8 @@ interface Props {
   files: File[];
   // Regions to start with once the file is decoded (re-trimming a saved voice).
   initialRegions?: Region[];
+  // The same, but per file (re-cutting a mood that was cut from several uploads).
+  initialParts?: FilePart[];
   onChange: (edit: ClipEdit | null) => void;
 }
 
@@ -82,7 +87,7 @@ function cursorFor(mode: Mode | null, dragging: boolean): string {
   return "crosshair";
 }
 
-export default function ClipEditor({ files, initialRegions, onChange }: Props) {
+export default function ClipEditor({ files, initialRegions, initialParts, onChange }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<Decoded | null>(null);
   const playRef = useRef<Playback | null>(null);
@@ -145,7 +150,8 @@ export default function ClipEditor({ files, initialRegions, onChange }: Props) {
         const { samples, bounds } = concatSamples(parts, RATE);
         const duration = samples.length / RATE;
         audioRef.current = { samples, rate: RATE, duration, bounds };
-        setRegions((cur) => normalizeRegions(appended ? cur : (initialRegions ?? []), duration));
+        const start = initialParts ? toTimeline(initialParts, bounds) : (initialRegions ?? []);
+        setRegions((cur) => normalizeRegions(appended ? cur : start, duration));
         setReady(true);
         setStatus(
           cutShort.length

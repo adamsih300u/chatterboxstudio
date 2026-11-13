@@ -52,6 +52,31 @@ export function splitAtBounds(regions, bounds) {
   return out;
 }
 
+// Regions on the combined timeline as { file, start, end }, each relative to its own file.
+// A region that spans several files is cut at their edges.
+export function splitByFile(regions, bounds) {
+  const out = [];
+  for (const r of regions) {
+    bounds.forEach((b, file) => {
+      const start = Math.max(r.start, b.start);
+      const end = Math.min(r.end, b.end);
+      if (end - start >= MIN_REGION_S) out.push({ file, start: start - b.start, end: end - b.start });
+    });
+  }
+  return out;
+}
+
+// The reverse of splitByFile: per-file regions placed on the combined timeline.
+// Parts naming a file that is not there are dropped.
+export function toTimeline(parts, bounds) {
+  return parts
+    .filter((p) => bounds[p.file])
+    .map((p) => {
+      const b = bounds[p.file];
+      return { start: b.start + p.start, end: Math.min(b.end, b.start + p.end) };
+    });
+}
+
 export function totalDuration(regions) {
   return regions.reduce((sum, r) => sum + (r.end - r.start), 0);
 }

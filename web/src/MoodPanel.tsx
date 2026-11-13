@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { addSource, deleteMood, deleteSource, errorMessage, getSourceAudio, moodAudioUrl, previewVoice, putMood } from "./api";
 import type { VoiceOut } from "./api";
 import ClipEditor from "./ClipEditor";
 import type { ClipEdit } from "./ClipEditor";
 import Player from "./Player";
-import { encodeWav, joinRegions } from "./audioEdit.js";
+import { encodeWav, joinRegions, splitByFile } from "./audioEdit.js";
+import type { FilePart } from "./audioEdit.js";
 
 // The kept parts joined into a wav; with no regions, the whole decoded clip.
 export function clipFrom(edit: ClipEdit): File {
@@ -16,9 +17,9 @@ export function clipFrom(edit: ClipEdit): File {
 interface Cutting {
   mood: string; // name typed for a new mood, or an existing mood's name
   isNew: boolean;
-  sourceId: string;
-  file: File | null; // null while the upload loads
-  initial: { start: number; end: number }[];
+  sourceIds: string[]; // the voice's uploads at the time the cut began, in timeline order
+  files: File[]; // empty while the uploads load
+  initial: FilePart[];
 }
 
 interface Props {
@@ -31,18 +32,11 @@ interface Props {
 // Moods of one voice (clips for neutral, angry, whisper...) and the uploads they are cut from.
 export default function MoodPanel({ voice, model, refreshVoices, setError }: Props) {
   const [newName, setNewName] = useState("");
-  const [pickSource, setPickSource] = useState(voice.sources[0]?.id ?? "");
   const [cutting, setCutting] = useState<Cutting | null>(null);
   const [cut, setCut] = useState<ClipEdit | null>(null);
   const [busy, setBusy] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<{ mood: string; url: string } | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
-
-  const cutFiles = useMemo(() => (cutting?.file ? [cutting.file] : []), [cutting?.file]);
-
-  useEffect(() => {
-    if (!voice.sources.some((s) => s.id === pickSource)) setPickSource(voice.sources[0]?.id ?? "");
-  }, [voice.sources, pickSource]);
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl.url); }, [previewUrl]);
 
@@ -58,32 +52,39 @@ export default function MoodPanel({ voice, model, refreshVoices, setError }: Pro
     }
   }
 
-  async function startCut(mood: string, isNew: boolean, sourceId: string, initial: { start: number; end: number }[]) {
+  // Every upload of the voice goes onto one timeline, so a mood can take parts from several.
+  async function startCut(mood: string, isNew: boolean) {
+    const sources = voice.sources;
+    const sourceIds = sources.map((s) => s.id);
+    // A mood being re-cut starts with the regions it was made from (none for a new one).
+    const existing = isNew ? undefined : voice.moods.find((m) => m.name === mood);
+    const initial = (existing?.regions ?? []).flatMap((r) => {
+      const file = sourceIds.indexOf(r.source || sourceIds[0]);
+      return file < 0 ? [] : [{ file, start: r.start, end: r.end }];
+    });
     setCut(null);
-    setCutting({ mood, isNew, sourceId, file: null, initial });
+    setCutting({ mood, isNew, sourceIds, files: [], initial: [] });
     try {
-      const blob = await getSourceAudio(voice.id, sourceId);
-      setCutting({ mood, isNew, sourceId, file: new File([blob], `${voice.id}-${sourceId}`), initial });
+      const blobs = await Promise.all(sources.map((s) => getSourceAudio(voice.id, s.id)));
+      const files = blobs.map((b, i) => new File([b], sources[i].name || sourceIds[i]));
+      setCutting({ mood, isNew, sourceIds, files, initial });
     } catch (err) {
       setCutting(null);
       setError(errorMessage(err));
     }
   }
 
-  function editMood(moodId: string) {
-    const m = voice.moods.find((x) => x.id === moodId);
-    if (!m) return;
-    const sourceId = m.regions[0]?.source || voice.sources[0]?.id;
-    if (!sourceId) return;
-    const initial = m.regions.filter((r) => (r.source || sourceId) === sourceId).map(({ start, end }) => ({ start, end }));
-    void startCut(m.name, false, sourceId, initial);
-  }
-
   async function saveCut() {
     if (!cutting || !cut) return;
     await run(async () => {
-      const regions = cut.regions.map((r) => ({ ...r, source: cutting.sourceId }));
-      await putMood(voice.id, cutting.mood, clipFrom(cut), regions);
+      // With nothing marked, every upload is kept whole.
+      const kept = cut.regions.length ? cut : { ...cut, regions: cut.bounds };
+      const regions = splitByFile(kept.regions, kept.bounds).map(({ file, start, end }) => ({
+        source: cutting.sourceIds[file],
+        start,
+        end,
+      }));
+      await putMood(voice.id, cutting.mood, clipFrom(kept), regions);
       setCutting(null);
       setCut(null);
       setNewName("");
@@ -122,7 +123,7 @@ export default function MoodPanel({ voice, model, refreshVoices, setError }: Pro
               Preview
             </button>
             {canCut && (
-              <button type="button" onClick={() => editMood(m.id)} disabled={busy || !!cutting}>
+              <button type="button" onClick={() => startCut(m.name, false)} disabled={busy || !!cutting}>
                 Re-cut
               </button>
             )}
@@ -137,12 +138,7 @@ export default function MoodPanel({ voice, model, refreshVoices, setError }: Pro
 
       <div className="row">
         <input placeholder="New mood (angry, whisper...)" value={newName} onChange={(e) => setNewName(e.target.value)} disabled={!!cutting} />
-        <select value={pickSource} onChange={(e) => setPickSource(e.target.value)} disabled={!canCut || !!cutting} aria-label="Cut from upload">
-          {voice.sources.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
-        <button type="button" disabled={!newName.trim() || !pickSource || !!cutting || busy} onClick={() => startCut(newName.trim(), true, pickSource, [])}>
+        <button type="button" disabled={!newName.trim() || !canCut || !!cutting || busy} onClick={() => startCut(newName.trim(), true)}>
           Cut mood
         </button>
       </div>
@@ -151,9 +147,12 @@ export default function MoodPanel({ voice, model, refreshVoices, setError }: Pro
       {cutting && (
         <div className="edit-card">
           <strong>{cutting.isNew ? `New mood: ${cutting.mood}` : `Re-cutting ${cutting.mood}`}</strong>
-          {!cutting.file && <p className="hint">Loading the upload...</p>}
-          {cutting.file && <ClipEditor files={cutFiles} initialRegions={cutting.initial} onChange={setCut} />}
-          <p className="hint">Put the clearest, most typical moment of this mood first: only the first 10 seconds of a clip steer the voice on the pinned model.</p>
+          {!cutting.files.length && <p className="hint">Loading the uploads...</p>}
+          {cutting.files.length > 0 && <ClipEditor files={cutting.files} initialParts={cutting.initial} onChange={setCut} />}
+          <p className="hint">
+            {cutting.files.length > 1 ? "All uploads of this voice are laid end to end; mark parts of any of them, and the parts join in that order. " : ""}
+            Put the clearest, most typical moment of this mood first: only the first 10 seconds of a clip steer the voice on the pinned model.
+          </p>
           <div className="row">
             <button type="button" onClick={saveCut} disabled={!cut || busy}>{busy ? "Saving..." : "Save mood"}</button>
             <button type="button" onClick={() => { setCutting(null); setCut(null); }} disabled={busy}>Cancel</button>
@@ -166,7 +165,7 @@ export default function MoodPanel({ voice, model, refreshVoices, setError }: Pro
         {voice.sources.map((s) => (
           <span key={s.id} className="hint">
             {s.name}{" "}
-            <button type="button" className="link" disabled={busy} onClick={() => run(async () => { await deleteSource(voice.id, s.id); await refreshVoices(); })}>
+            <button type="button" className="link" disabled={busy || !!cutting} onClick={() => run(async () => { await deleteSource(voice.id, s.id); await refreshVoices(); })}>
               Remove
             </button>
           </span>
@@ -175,7 +174,7 @@ export default function MoodPanel({ voice, model, refreshVoices, setError }: Pro
           type="file"
           ref={uploadRef}
           accept=".wav,.mp3,.flac,.ogg,.m4a,.m4b,.aac,.opus,audio/*"
-          disabled={busy}
+          disabled={busy || !!cutting}
           onChange={(e) => {
             const f = e.target.files?.[0];
             e.target.value = "";
