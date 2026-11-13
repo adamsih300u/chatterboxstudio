@@ -6,7 +6,10 @@ export type ModelInfo = Schemas["ModelInfo"];
 export type ModelList = Schemas["ModelList"];
 export type LoadStarted = Schemas["LoadStarted"];
 export type VoiceOut = Schemas["VoiceOut"];
-export type Region = Schemas["Region"];
+// A kept span of an upload, in seconds. `source` names the upload; without it the first one is meant.
+export type Region = Pick<Schemas["MoodRegion"], "start" | "end"> & { source?: string };
+export type MoodOut = Schemas["MoodOut"];
+export type SourceOut = Schemas["SourceOut"];
 export type VoiceList = Schemas["VoiceList"];
 export type DefaultVoiceOut = Schemas["DefaultVoiceOut"];
 export type BuiltinOut = Schemas["BuiltinOut"];
@@ -93,6 +96,36 @@ export async function updateVoice(id: string, file: Blob, regions: Region[]): Pr
   return json(await fetch(`/api/voices/${encodeURIComponent(id)}`, { method: "PUT", body }));
 }
 
+// Create a mood, or replace its clip. Each region names the upload (`source`) it was cut from.
+export async function putMood(id: string, mood: string, file: Blob, regions: Region[]): Promise<VoiceOut> {
+  const body = new FormData();
+  body.append("file", file, "clip.wav");
+  body.append("regions", JSON.stringify(regions));
+  return json(await fetch(`/api/voices/${encodeURIComponent(id)}/moods/${encodeURIComponent(mood)}`, { method: "PUT", body }));
+}
+
+export async function deleteMood(id: string, mood: string): Promise<VoiceOut> {
+  return json(await fetch(`/api/voices/${encodeURIComponent(id)}/moods/${encodeURIComponent(mood)}`, { method: "DELETE" }));
+}
+
+// Keep another untrimmed upload with a voice, to cut more moods from.
+export async function addSource(id: string, file: File): Promise<VoiceOut> {
+  const body = new FormData();
+  body.append("file", file);
+  return json(await fetch(`/api/voices/${encodeURIComponent(id)}/sources`, { method: "POST", body }));
+}
+
+export async function deleteSource(id: string, source: string): Promise<VoiceOut> {
+  return json(await fetch(`/api/voices/${encodeURIComponent(id)}/sources/${encodeURIComponent(source)}`, { method: "DELETE" }));
+}
+
+export async function getSourceAudio(id: string, source: string): Promise<Blob> {
+  return (await check(await fetch(`/api/voices/${encodeURIComponent(id)}/sources/${encodeURIComponent(source)}/audio`))).blob();
+}
+
+export const moodAudioUrl = (id: string, mood: string, v: number): string =>
+  `/api/voices/${encodeURIComponent(id)}/moods/${encodeURIComponent(mood)}/audio?v=${v}`;
+
 // The untrimmed upload (or the clip itself for voices saved without one).
 export async function getVoiceSource(id: string): Promise<Blob> {
   return (await check(await fetch(`/api/voices/${encodeURIComponent(id)}/source`))).blob();
@@ -127,12 +160,12 @@ export async function convertWav(wav: Blob, format: string): Promise<Blob> {
 }
 
 // Speak the fixed preview sentence; `cached` is true when the server reused an earlier render.
-export async function previewVoice(id: string, model?: string | null): Promise<{ blob: Blob; cached: boolean; duration: number | null }> {
+export async function previewVoice(id: string, model?: string | null, mood?: string | null): Promise<{ blob: Blob; cached: boolean; duration: number | null }> {
   const res = await check(
     await fetch(`/api/voices/${encodeURIComponent(id)}/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: model || null }),
+      body: JSON.stringify({ model: model || null, mood: mood || null }),
     })
   );
   return { blob: await res.blob(), cached: res.headers.get("X-Preview-Cached") === "true", duration: headerSeconds(res) };

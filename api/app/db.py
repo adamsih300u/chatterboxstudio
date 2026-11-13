@@ -5,7 +5,7 @@ from typing import Iterator, Optional
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import JSON, Float, Integer, String, Text, create_engine, event
+from sqlalchemy import JSON, Float, ForeignKey, Integer, String, Text, create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -20,11 +20,33 @@ class VoiceRow(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(64))
     created: Mapped[float] = mapped_column(Float)
-    filename: Mapped[str] = mapped_column(String(32))
-    # Untrimmed upload kept so the clip can be re-trimmed later; "" for voices saved before this existed.
-    original: Mapped[str] = mapped_column(String(32), default="", server_default="")
-    # Keep-regions [{start, end}] in seconds of the original, as last saved from the clip editor.
+    updated: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
+
+
+class VoiceSourceRow(Base):
+    """An untrimmed upload kept with a voice, so clips can be cut from it (and from later uploads)."""
+
+    __tablename__ = "voice_sources"
+
+    voice_id: Mapped[str] = mapped_column(String(64), ForeignKey("voices.id", ondelete="CASCADE"), primary_key=True)
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)  # s1, s2, ...
+    filename: Mapped[str] = mapped_column(String(48))
+    label: Mapped[str] = mapped_column(String(128), default="")
+    created: Mapped[float] = mapped_column(Float)
+
+
+class VoiceMoodRow(Base):
+    """One reference clip of a voice (neutral, angry, whisper, ...). The clip is cut from sources."""
+
+    __tablename__ = "voice_moods"
+
+    voice_id: Mapped[str] = mapped_column(String(64), ForeignKey("voices.id", ondelete="CASCADE"), primary_key=True)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # the slug used in {tags}
+    name: Mapped[str] = mapped_column(String(64))
+    filename: Mapped[str] = mapped_column(String(48))
+    # Keep-regions [{source, start, end}] in seconds of the named source, as last saved from the editor.
     regions: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
+    created: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
     updated: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
 
 
@@ -110,4 +132,4 @@ class Database:
         self.engine.dispose()
 
 
-__all__ = ["Base", "Database", "GenerationRow", "SettingRow", "VoiceRow"]
+__all__ = ["Base", "Database", "GenerationRow", "SettingRow", "VoiceMoodRow", "VoiceRow", "VoiceSourceRow"]

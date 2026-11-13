@@ -9,13 +9,15 @@ from app.db import MIGRATIONS, Database
 from app.voices import VoiceError, VoiceNotFound, VoiceStore
 
 REGIONS = [{"start": 0.5, "end": 2.0}, {"start": 3.0, "end": 4.5}]
+# The store tags each region with the upload it was cut from; untagged ones belong to the first.
+TAGGED = [{"source": "s1", **r} for r in REGIONS]
 
 
 def test_add_keeps_original_and_regions(store):
     v = store.add("Ann", b"trimmed", "clip.wav", original=b"whole-upload", original_filename="up.mp3", regions=REGIONS)
     assert v.path.read_bytes() == b"trimmed"
     assert v.source_path.read_bytes() == b"whole-upload" and v.source_path.suffix == ".mp3"
-    assert store.get("ann").regions == REGIONS
+    assert store.get("ann").regions == TAGGED
     assert v.public()["has_original"] is True
 
 
@@ -27,7 +29,7 @@ def test_voice_without_original_edits_from_its_clip(store):
     # The previous clip is now the original, and the new one replaces it.
     assert v2.path.read_bytes() == b"shorter"
     assert v2.source_path.read_bytes() == b"clip"
-    assert v2.regions == REGIONS and v2.updated >= v.updated
+    assert v2.regions == TAGGED and v2.updated >= v.updated
 
 
 def test_update_keeps_original_unless_replaced(store):
@@ -80,7 +82,7 @@ def test_routes_add_with_original_then_edit_and_export(client):
     )
     assert r.status_code == 201
     body = r.json()
-    assert body["has_original"] is True and body["regions"] == REGIONS
+    assert body["has_original"] is True and body["regions"] == TAGGED
 
     assert client.get("/api/voices/bob/source").content == b"whole"
     assert client.get("/api/voices/bob/audio").content == b"abc"
@@ -95,7 +97,7 @@ def test_routes_add_with_original_then_edit_and_export(client):
         files={"file": ("n.wav", b"newclip", "audio/wav")},
         data={"regions": json.dumps([{"start": 1, "end": 2}])},
     )
-    assert r.status_code == 200 and r.json()["regions"] == [{"start": 1.0, "end": 2.0}]
+    assert r.status_code == 200 and r.json()["regions"] == [{"source": "s1", "start": 1.0, "end": 2.0}]
     assert client.get("/api/voices/bob/audio").content == b"newclip"
     assert client.get("/api/voices/bob/source").content == b"whole"
     assert [v["id"] for v in client.get("/api/voices").json()["voices"]] == ["bob"]

@@ -43,6 +43,14 @@ Offline host: download the Hugging Face snapshots elsewhere and copy them into `
 
 `voice` is the id of a saved voice; omit it or use `default` for the stock voice. Only `wav` is supported.
 
+## Moods
+
+A voice can have several moods: reference clips such as `angry` or `whisper`, cut from the voice's kept uploads (Voices tab, "Cut mood"). More uploads can be added to a voice later and cut from.
+
+In a script, `{Alice}` plays her neutral mood and `{Alice:angry}` an exact one. In a script that uses one voice, a bare `{angry}` picks that mood of the voice already speaking, and only if no such mood exists is it read as a voice name. A tag carries forward until the next tag. `neutral`, `default`, `none` and `cut` are reserved. The pinned model reads only the first 10 seconds of a clip, so put the best material first.
+
+API: `PUT /api/voices/{id}/moods/{mood}`, `DELETE /api/voices/{id}/moods/{mood}`, `POST /api/voices/{id}/sources`, `DELETE /api/voices/{id}/sources/{source}`.
+
 ## Develop
 
     cd api && pip install -r requirements.txt -r requirements-dev.txt && pytest
