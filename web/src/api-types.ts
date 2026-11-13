@@ -45,6 +45,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/convert-voice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert Voice
+         * @description Re-speak a recording in a saved voice (or one of its moods). Timing, pacing and emphasis
+         *     come from the recording; only the voice changes. The first call loads the conversion model.
+         *     `lead_in_ms` of silence is added once at the start, like /api/tts.
+         */
+        post: operations["convert_voice_api_convert_voice_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/generations": {
         parameters: {
             query?: never;
@@ -303,6 +325,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/voices/{voice_id}/moods/{mood_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Mood
+         * @description Create a mood, or replace its clip. `regions` says which parts of which uploads the clip
+         *     was cut from (each region names its upload with `source`).
+         */
+        put: operations["put_mood_api_voices__voice_id__moods__mood_name__put"];
+        post?: never;
+        /** Delete Mood */
+        delete: operations["delete_mood_api_voices__voice_id__moods__mood_name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voices/{voice_id}/moods/{mood_name}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mood Audio */
+        get: operations["mood_audio_api_voices__voice_id__moods__mood_name__audio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/voices/{voice_id}/preview": {
         parameters: {
             query?: never;
@@ -336,6 +397,60 @@ export interface paths {
          * @description The untrimmed upload for re-trimming (the clip itself for voices saved without one).
          */
         get: operations["voice_source_api_voices__voice_id__source_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voices/{voice_id}/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Source
+         * @description Keep another untrimmed upload with a voice, to cut more moods from.
+         */
+        post: operations["add_source_api_voices__voice_id__sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voices/{voice_id}/sources/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Source */
+        delete: operations["delete_source_api_voices__voice_id__sources__source_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voices/{voice_id}/sources/{source_id}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Source Audio */
+        get: operations["source_audio_api_voices__voice_id__sources__source_id__audio_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -387,6 +502,11 @@ export interface components {
              */
             voice: string;
         };
+        /** Body_add_source_api_voices__voice_id__sources_post */
+        Body_add_source_api_voices__voice_id__sources_post: {
+            /** File */
+            file: string;
+        };
         /** Body_add_voice_api_voices_post */
         Body_add_voice_api_voices_post: {
             /** File */
@@ -406,10 +526,42 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_convert_voice_api_convert_voice_post */
+        Body_convert_voice_api_convert_voice_post: {
+            /** File */
+            file: string;
+            /**
+             * Lead In Ms
+             * @default 150
+             */
+            lead_in_ms: number;
+            /**
+             * Mood
+             * @default
+             */
+            mood: string;
+            /** Seed */
+            seed?: number | null;
+            /**
+             * Voice
+             * @default
+             */
+            voice: string;
+        };
         /** Body_decode_audio_api_audio_decode_post */
         Body_decode_audio_api_audio_decode_post: {
             /** File */
             file: string;
+        };
+        /** Body_put_mood_api_voices__voice_id__moods__mood_name__put */
+        Body_put_mood_api_voices__voice_id__moods__mood_name__put: {
+            /** File */
+            file: string;
+            /**
+             * Regions
+             * @default []
+             */
+            regions: string;
         };
         /** Body_update_voice_api_voices__voice_id__put */
         Body_update_voice_api_voices__voice_id__put: {
@@ -525,6 +677,34 @@ export interface components {
             /** Models */
             models: components["schemas"]["ModelInfo"][];
         };
+        /** MoodOut */
+        MoodOut: {
+            /** Duration */
+            duration?: number | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Regions */
+            regions: components["schemas"]["MoodRegion"][];
+            /** Updated */
+            updated: number;
+        };
+        /**
+         * MoodRegion
+         * @description A keep-region of one of a voice's uploads.
+         */
+        MoodRegion: {
+            /** End */
+            end: number;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** Start */
+            start: number;
+        };
         /** ParamSpec */
         ParamSpec: {
             /** Default */
@@ -554,6 +734,8 @@ export interface components {
             language: string;
             /** Model */
             model?: string | null;
+            /** Mood */
+            mood?: string | null;
             /**
              * Params
              * @default {}
@@ -561,16 +743,6 @@ export interface components {
             params: {
                 [key: string]: unknown;
             };
-        };
-        /**
-         * Region
-         * @description A keep-region of a voice's original upload, in seconds.
-         */
-        Region: {
-            /** End */
-            end: number;
-            /** Start */
-            start: number;
         };
         /** Segment */
         Segment: {
@@ -588,6 +760,15 @@ export interface components {
              * @default
              */
             voice: string;
+        };
+        /** SourceOut */
+        SourceOut: {
+            /** Duration */
+            duration?: number | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
         };
         /** SpeechRequest */
         SpeechRequest: {
@@ -629,6 +810,11 @@ export interface components {
              * @default en
              */
             language: string;
+            /**
+             * Lead In Ms
+             * @default 150
+             */
+            lead_in_ms: number;
             /** Model */
             model?: string | null;
             /**
@@ -692,10 +878,20 @@ export interface components {
             has_original: boolean;
             /** Id */
             id: string;
+            /**
+             * Moods
+             * @default []
+             */
+            moods: components["schemas"]["MoodOut"][];
             /** Name */
             name: string;
             /** Regions */
-            regions: components["schemas"]["Region"][];
+            regions: components["schemas"]["MoodRegion"][];
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["SourceOut"][];
             /** Updated */
             updated: number;
         };
@@ -756,6 +952,39 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_convert_api_convert_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convert_voice_api_convert_voice_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_convert_voice_api_convert_voice_post"];
             };
         };
         responses: {
@@ -1279,6 +1508,106 @@ export interface operations {
             };
         };
     };
+    put_mood_api_voices__voice_id__moods__mood_name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_id: string;
+                mood_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_put_mood_api_voices__voice_id__moods__mood_name__put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_mood_api_voices__voice_id__moods__mood_name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_id: string;
+                mood_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mood_audio_api_voices__voice_id__moods__mood_name__audio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_id: string;
+                mood_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     voice_preview_api_voices__voice_id__preview_post: {
         parameters: {
             query?: never;
@@ -1320,6 +1649,105 @@ export interface operations {
             header?: never;
             path: {
                 voice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_source_api_voices__voice_id__sources_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_add_source_api_voices__voice_id__sources_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_source_api_voices__voice_id__sources__source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_id: string;
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_audio_api_voices__voice_id__sources__source_id__audio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_id: string;
+                source_id: string;
             };
             cookie?: never;
         };

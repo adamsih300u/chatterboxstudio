@@ -57,6 +57,16 @@ export default function GenerateTab({ reuse, models, model, setModel, voices, de
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioLength, setAudioLength] = useState<number | null>(null);
   const [format, setFormat] = useExportFormat();
+
+  // What {tag} suggests: voice names, the moods of the selected voice as bare {angry}, and
+  // {Alice:angry} for every voice that has moods beyond neutral.
+  const picked = voices.find((v) => v.id === (voice || defaultVoice) || v.name === voice);
+  const extraMoods = (v: VoiceOut) => v.moods.filter((m) => m.id !== "neutral");
+  const tagNames = [
+    ...voices.map((v) => v.name),
+    ...(picked ? extraMoods(picked).map((m) => m.name) : []),
+    ...voices.flatMap((v) => extraMoods(v).map((m) => `${v.name}:${m.name}`)),
+  ];
   const [converting, setConverting] = useState(false);
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -193,7 +203,7 @@ export default function GenerateTab({ reuse, models, model, setModel, voices, de
         value={text}
         onChange={setText}
         tags={model === "turbo" || model === "nano" ? TURBO_TAGS : []}
-        voiceNames={voices.map((v) => v.name)}
+        voiceNames={tagNames}
       />
 
       <AdvancedParams

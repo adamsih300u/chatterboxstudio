@@ -35,6 +35,20 @@
         "title": "Body_add_generation_api_generations_post",
         "type": "object"
       },
+      "Body_add_source_api_voices__voice_id__sources_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_add_source_api_voices__voice_id__sources_post",
+        "type": "object"
+      },
       "Body_add_voice_api_voices_post": {
         "properties": {
           "file": {
@@ -87,6 +101,52 @@
         "title": "Body_convert_api_convert_post",
         "type": "object"
       },
+      "Body_convert_voice_api_convert_voice_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "lead_in_ms": {
+            "default": 150,
+            "maximum": 2000.0,
+            "minimum": 0.0,
+            "title": "Lead In Ms",
+            "type": "integer"
+          },
+          "mood": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Mood",
+            "type": "string"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 4294967295.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "voice": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Voice",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_convert_voice_api_convert_voice_post",
+        "type": "object"
+      },
       "Body_decode_audio_api_audio_decode_post": {
         "properties": {
           "file": {
@@ -99,6 +159,25 @@
           "file"
         ],
         "title": "Body_decode_audio_api_audio_decode_post",
+        "type": "object"
+      },
+      "Body_put_mood_api_voices__voice_id__moods__mood_name__put": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "regions": {
+            "default": "[]",
+            "title": "Regions",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_put_mood_api_voices__voice_id__moods__mood_name__put",
         "type": "object"
       },
       "Body_update_voice_api_voices__voice_id__put": {
@@ -417,6 +496,75 @@
         "title": "ModelList",
         "type": "object"
       },
+      "MoodOut": {
+        "properties": {
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "regions": {
+            "items": {
+              "$ref": "#/components/schemas/MoodRegion"
+            },
+            "title": "Regions",
+            "type": "array"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "regions",
+          "updated"
+        ],
+        "title": "MoodOut",
+        "type": "object"
+      },
+      "MoodRegion": {
+        "description": "A keep-region of one of a voice's uploads.",
+        "properties": {
+          "end": {
+            "minimum": 0.0,
+            "title": "End",
+            "type": "number"
+          },
+          "source": {
+            "default": "",
+            "maxLength": 16,
+            "title": "Source",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "MoodRegion",
+        "type": "object"
+      },
       "ParamSpec": {
         "properties": {
           "default": {
@@ -503,6 +651,18 @@
             ],
             "title": "Model"
           },
+          "mood": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood"
+          },
           "params": {
             "additionalProperties": true,
             "default": {},
@@ -511,27 +671,6 @@
           }
         },
         "title": "PreviewRequest",
-        "type": "object"
-      },
-      "Region": {
-        "description": "A keep-region of a voice's original upload, in seconds.",
-        "properties": {
-          "end": {
-            "minimum": 0.0,
-            "title": "End",
-            "type": "number"
-          },
-          "start": {
-            "minimum": 0.0,
-            "title": "Start",
-            "type": "number"
-          }
-        },
-        "required": [
-          "start",
-          "end"
-        ],
-        "title": "Region",
         "type": "object"
       },
       "Segment": {
@@ -575,6 +714,35 @@
           "text"
         ],
         "title": "SegmentOut",
+        "type": "object"
+      },
+      "SourceOut": {
+        "properties": {
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SourceOut",
         "type": "object"
       },
       "SpeechRequest": {
@@ -660,6 +828,13 @@
             "minLength": 2,
             "title": "Language",
             "type": "string"
+          },
+          "lead_in_ms": {
+            "default": 150,
+            "maximum": 2000.0,
+            "minimum": 0.0,
+            "title": "Lead In Ms",
+            "type": "integer"
           },
           "model": {
             "anyOf": [
@@ -838,15 +1013,31 @@
             "title": "Id",
             "type": "string"
           },
+          "moods": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MoodOut"
+            },
+            "title": "Moods",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
             "type": "string"
           },
           "regions": {
             "items": {
-              "$ref": "#/components/schemas/Region"
+              "$ref": "#/components/schemas/MoodRegion"
             },
             "title": "Regions",
+            "type": "array"
+          },
+          "sources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SourceOut"
+            },
+            "title": "Sources",
             "type": "array"
           },
           "updated": {
@@ -979,6 +1170,43 @@
           }
         },
         "summary": "Convert"
+      }
+    },
+    "/api/convert-voice": {
+      "post": {
+        "description": "Re-speak a recording in a saved voice (or one of its moods). Timing, pacing and emphasis\ncome from the recording; only the voice changes. The first call loads the conversion model.\n`lead_in_ms` of silence is added once at the start, like /api/tts.",
+        "operationId": "convert_voice_api_convert_voice_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_convert_voice_api_convert_voice_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convert Voice"
       }
     },
     "/api/generations": {
@@ -1568,6 +1796,157 @@
         "summary": "Voice Export"
       }
     },
+    "/api/voices/{voice_id}/moods/{mood_name}": {
+      "delete": {
+        "operationId": "delete_mood_api_voices__voice_id__moods__mood_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mood_name",
+            "required": true,
+            "schema": {
+              "title": "Mood Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Mood"
+      },
+      "put": {
+        "description": "Create a mood, or replace its clip. `regions` says which parts of which uploads the clip\nwas cut from (each region names its upload with `source`).",
+        "operationId": "put_mood_api_voices__voice_id__moods__mood_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mood_name",
+            "required": true,
+            "schema": {
+              "title": "Mood Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_put_mood_api_voices__voice_id__moods__mood_name__put"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Mood"
+      }
+    },
+    "/api/voices/{voice_id}/moods/{mood_name}/audio": {
+      "get": {
+        "operationId": "mood_audio_api_voices__voice_id__moods__mood_name__audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mood_name",
+            "required": true,
+            "schema": {
+              "title": "Mood Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mood Audio"
+      }
+    },
     "/api/voices/{voice_id}/preview": {
       "post": {
         "description": "Speak a fixed sentence in this voice. Cached until the clip, model, language,\nparameters or sentence change.",
@@ -1652,6 +2031,150 @@
           }
         },
         "summary": "Voice Source"
+      }
+    },
+    "/api/voices/{voice_id}/sources": {
+      "post": {
+        "description": "Keep another untrimmed upload with a voice, to cut more moods from.",
+        "operationId": "add_source_api_voices__voice_id__sources_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_add_source_api_voices__voice_id__sources_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Source"
+      }
+    },
+    "/api/voices/{voice_id}/sources/{source_id}": {
+      "delete": {
+        "operationId": "delete_source_api_voices__voice_id__sources__source_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Source"
+      }
+    },
+    "/api/voices/{voice_id}/sources/{source_id}/audio": {
+      "get": {
+        "operationId": "source_audio_api_voices__voice_id__sources__source_id__audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Source Audio"
       }
     },
     "/v1/audio/speech": {

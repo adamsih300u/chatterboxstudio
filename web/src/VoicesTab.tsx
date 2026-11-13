@@ -16,11 +16,11 @@ import ClipEditor from "./ClipEditor";
 import { FormatSelect, useExportFormat } from "./ExportFormat";
 import Player from "./Player";
 import MoreMenu from "./MoreMenu";
+import MoodPanel, { clipFrom } from "./MoodPanel";
 import type { ClipEdit } from "./ClipEditor";
 import {
   MAX_ORIGINAL_BYTES,
   encodeWav,
-  joinRegions,
   keepOnlyRegions,
   needsServerDecode,
   wavBytes,
@@ -45,13 +45,6 @@ interface Preview {
 interface Editing {
   voice: VoiceOut;
   source: File | null; // null while the source loads
-}
-
-// The kept parts joined into a wav; with no regions, the whole decoded clip.
-function clipFrom(edit: ClipEdit): File {
-  const regions = edit.regions.length ? edit.regions : [{ start: 0, end: edit.samples.length / edit.rate }];
-  const wav = encodeWav(joinRegions(edit.samples, edit.rate, regions), edit.rate);
-  return new File([wav], "clip.wav", { type: "audio/wav" });
 }
 
 export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, refreshVoices, setError }: Props) {
@@ -327,6 +320,7 @@ export default function VoicesTab({ model, voices, defaultVoice, builtinHidden, 
                   Delete
                 </button>
               </MoreMenu>
+              <MoodPanel voice={v} model={model} refreshVoices={refreshVoices} setError={setError} />
             </li>
           );
         })}

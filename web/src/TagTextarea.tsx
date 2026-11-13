@@ -127,7 +127,7 @@ export default function TagTextarea({ value, onChange, tags, voiceNames = [], ..
                 if (e.target.value) insertAtCaret(e.target.value);
               }}
             >
-              <option value="">Voice tag...</option>
+              <option value="">Voice or mood tag...</option>
               {voiceNames.map((n) => (
                 <option key={n} value={`{${n}}`}>
                   {`{${n}}`}

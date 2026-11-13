@@ -43,6 +43,26 @@ Offline host: download the Hugging Face snapshots elsewhere and copy them into `
 
 `voice` is the id of a saved voice; omit it or use `default` for the stock voice. Only `wav` is supported.
 
+## Moods
+
+A voice can have several moods: reference clips such as `angry` or `whisper`, cut from the voice's kept uploads (Voices tab, "Cut mood"). More uploads can be added to a voice later and cut from.
+
+In a script, `{Alice}` plays her neutral mood and `{Alice:angry}` an exact one. In a script that uses one voice, a bare `{angry}` picks that mood of the voice already speaking, and only if no such mood exists is it read as a voice name. A tag carries forward until the next tag. `neutral`, `default`, `none` and `cut` are reserved. The pinned model reads only the first 10 seconds of a clip, so put the best material first.
+
+API: `PUT /api/voices/{id}/moods/{mood}`, `DELETE /api/voices/{id}/moods/{mood}`, `POST /api/voices/{id}/sources`, `DELETE /api/voices/{id}/sources/{source}`.
+
+"Cut mood" and "Re-cut" lay all of a voice's uploads end to end on one waveform. Mark parts of any of them; the parts join, in timeline order, into the mood's clip.
+
+## Voice conversion
+
+The Convert tab re-speaks a recording in a saved voice or one of its moods. Pacing, timing and emphasis come from the recording, so you can perform a line yourself and keep your delivery. It uses upstream's `ChatterboxVC`, which loads separately from the TTS models on first use. It takes any audio ffmpeg reads, or a microphone recording made in the page.
+
+    curl -F file=@line.wav -F voice=alice -F mood=angry http://localhost:8000/api/convert-voice -o out.wav
+
+- Only the first 10 seconds of the target clip steer the voice (an upstream limit), so mood clips should start with their best material.
+- Recordings are capped at `MAX_CONVERT_SECONDS` (default 40). The pinned tokenizer sets no limit of its own, and longer inputs have not been tried on the real model.
+- The output carries upstream's watermark, like TTS output.
+
 ## Develop
 
     cd api && pip install -r requirements.txt -r requirements-dev.txt && pytest

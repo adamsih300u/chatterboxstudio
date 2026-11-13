@@ -3,6 +3,7 @@ import hashlib
 import itertools
 import json
 import secrets
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -23,12 +24,14 @@ from .generations import GenerationStore
 from .legacy import import_legacy
 from .models import PARAM_SPECS, VARIANTS, ModelManager, clean_params, configure_threads, resolve_variant
 from .script import parse_script_plan
-from .voices import VoiceError, VoiceNotFound, VoiceStore
+from .voices import VoiceError, VoiceNotFound, VoiceStore, resolve_spec
 
 NO_VOICE = {"", "default", "none"}
 MAX_SEED = 2**32 - 1
 MAX_SEGMENTS = 50
 SENTENCE_GAP_MS = 150  # silence between sentences of one line when streaming
+# Silence at the start of a finished take, so players that wake up late don't clip the first word.
+DEFAULT_LEAD_IN_MS = 150
 MAX_REGIONS = 100
 
 
@@ -70,6 +73,8 @@ class TTSRequest(BaseModel):
     language: str = Field(default="en", min_length=2, max_length=16)
     params: dict[str, Any] = {}
     pause_ms: int = Field(default=300, ge=0, le=5000)
+    # Silence added once at the very start of the take (not per sentence or segment).
+    lead_in_ms: int = Field(default=DEFAULT_LEAD_IN_MS, ge=0, le=2000)
     save: bool = False
     # Same seed + text + voice + settings gives the same take. Omitted: a random one is picked
     # and returned in the X-Seed header (and stored with the History entry).
@@ -111,9 +116,9 @@ class Region(BaseModel):
 REGIONS = TypeAdapter(list[Region])
 
 
-def parse_regions(raw: str) -> list[dict]:
+def parse_regions(raw: str, adapter=REGIONS) -> list[dict]:
     try:
-        regions = REGIONS.validate_json(raw or "[]")
+        regions = adapter.validate_json(raw or "[]")
     except ValidationError as e:
         raise HTTPException(400, f"invalid regions: {e.errors()[0]['msg']}")
     if len(regions) > MAX_REGIONS:
@@ -123,8 +128,32 @@ def parse_regions(raw: str) -> list[dict]:
 
 class PreviewRequest(BaseModel):
     model: Optional[str] = Field(default=None, max_length=64)
+    mood: Optional[str] = Field(default=None, max_length=64)
     language: str = Field(default="en", min_length=2, max_length=16)
     params: dict[str, Any] = {}
+
+
+class MoodRegion(Region):
+    """A keep-region of one of a voice's uploads."""
+
+    source: str = Field(default="", max_length=16)
+
+
+MOOD_REGIONS = TypeAdapter(list[MoodRegion])
+
+
+class MoodOut(BaseModel):
+    id: str
+    name: str
+    regions: list[MoodRegion]
+    updated: float
+    duration: Optional[float] = None
+
+
+class SourceOut(BaseModel):
+    id: str
+    name: str
+    duration: Optional[float] = None
 
 
 class VoiceOut(BaseModel):
@@ -132,9 +161,11 @@ class VoiceOut(BaseModel):
     name: str
     created: float
     updated: float
-    regions: list[Region]
+    regions: list[MoodRegion]
     has_original: bool
     duration: Optional[float] = None  # seconds of the saved clip, when it can be read
+    moods: list[MoodOut] = []
+    sources: list[SourceOut] = []
 
 
 class VoiceList(BaseModel):
@@ -234,13 +265,19 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         except ValueError as e:
             raise HTTPException(400, str(e))
         plan = []
-        for text, voice in segments:
+        speaking = None  # the voice already talking, so a bare {angry} can pick one of its moods
+        for text, spec in segments:
             ref, label = None, ""
-            if voice and voice.lower() not in NO_VOICE:
-                found = store.get(voice)
-                if found is None:
-                    raise HTTPException(404, f"voice '{voice}' not found")
-                ref, label = found.path, getattr(found, "name", voice)
+            if spec and spec.lower() not in NO_VOICE:
+                try:
+                    found, mood = resolve_spec(store, spec, speaking)
+                except VoiceNotFound as e:
+                    raise HTTPException(404, str(e))
+                speaking = found
+                ref = mood.path
+                label = found.name if mood.id == found.neutral.id else f"{found.name}:{mood.name}"
+            else:
+                speaking = None
             plan.append({"text": text, "voice": label, "ref": ref})
         return variant, clean, plan
 
@@ -254,6 +291,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         seed: Optional[int] = None,
         by_sentence: bool = True,
         cancel: Optional[threading.Event] = None,
+        lead_in_ms: int = 0,
     ) -> tuple[bytes, str, list[dict]]:
         """Generate every segment, stitch them, and return (wav, variant, resolved segments).
 
@@ -282,7 +320,10 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
                 samples = cut_at_fraction(samples, rate, cut.keep)
             chunks.append(samples)
         overlaps = {i: c.overlap_ms for i, c in cuts.items() if c.overlap_ms}
-        wav = to_wav_bytes(stitch(chunks, rate, min(max(pause_ms, 0), 5000), set(cuts), overlaps), rate)
+        samples = stitch(chunks, rate, min(max(pause_ms, 0), 5000), set(cuts), overlaps)
+        if lead_in_ms > 0:
+            samples = np.concatenate([np.zeros(int(rate * min(lead_in_ms, 2000) / 1000), dtype=np.float32), samples])
+        wav = to_wav_bytes(samples, rate)
         return wav, variant, [{"text": i["text"], "voice": i["voice"]} for i in plan]
 
     @app.get("/api/health", response_model=Health)
@@ -327,7 +368,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         cancel = threading.Event()
 
         def work():
-            wav, variant, plan = render(req.model, segs, req.language, req.params, req.pause_ms, cuts, seed, cancel=cancel)
+            wav, variant, plan = render(req.model, segs, req.language, req.params, req.pause_ms, cuts, seed, cancel=cancel, lead_in_ms=req.lead_in_ms)
             headers = duration_headers(wav, {"X-Seed": str(seed)})
             if req.save:
                 if cancel.is_set():
@@ -389,6 +430,8 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
                     )
                     samples = np.asarray(samples, dtype=np.float32).reshape(-1)
                     gap_ms = pause if (pi == 0 and si > 0) else (SENTENCE_GAP_MS if pi > 0 else 0)
+                    if not kept:
+                        gap_ms = req.lead_in_ms  # first audio of the take: the lead-in, once
                     if gap_ms:
                         samples = np.concatenate([np.zeros(int(rate * gap_ms / 1000), dtype=np.float32), samples])
                     kept.append(samples)
@@ -451,6 +494,53 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         except ConvertError as e:
             raise HTTPException(400, str(e))
         return Response(wav, media_type="audio/wav", headers=duration_headers(wav))
+
+    @app.post("/api/convert-voice")
+    async def convert_voice(
+        file: UploadFile = File(...),
+        voice: str = Form("", max_length=64),
+        mood: str = Form("", max_length=64),
+        seed: Optional[int] = Form(None, ge=0, le=MAX_SEED),
+        lead_in_ms: int = Form(DEFAULT_LEAD_IN_MS, ge=0, le=2000),
+    ):
+        """Re-speak a recording in a saved voice (or one of its moods). Timing, pacing and emphasis
+        come from the recording; only the voice changes. The first call loads the conversion model.
+        `lead_in_ms` of silence is added once at the start, like /api/tts."""
+        ref = None
+        if voice.strip().lower() not in NO_VOICE:
+            try:
+                _, picked = resolve_spec(store, f"{voice}:{mood}" if mood.strip() else voice, None)
+            except VoiceNotFound as e:
+                raise HTTPException(404, str(e))
+            ref = picked.path
+        elif mood.strip():
+            raise HTTPException(400, "a mood needs a voice")
+        data = await read_upload(file)
+        limit = settings.max_convert_seconds
+        seed = seed if seed is not None else secrets.randbelow(MAX_SEED + 1)
+
+        def work():
+            try:
+                # Decode a little past the limit so an over-long recording is refused, not silently cut.
+                wav_in = decode(data, 0.0, limit + 1)
+            except ConvertError as e:
+                raise HTTPException(400, str(e))
+            if wav_duration(wav_in) > limit:
+                raise HTTPException(413, f"recording is longer than {limit:g} seconds")
+            with tempfile.TemporaryDirectory() as tmp:
+                src = Path(tmp) / "in.wav"
+                src.write_bytes(wav_in)
+                try:
+                    samples, rate = engine.convert(src, ref_path=ref, seed=seed)
+                except ValueError as e:
+                    raise HTTPException(400, str(e))
+            out = np.asarray(samples, dtype=np.float32).reshape(-1)
+            if lead_in_ms > 0:
+                out = np.concatenate([np.zeros(int(rate * lead_in_ms / 1000), dtype=np.float32), out])
+            wav = to_wav_bytes(out, rate)
+            return Response(wav, media_type="audio/wav", headers=duration_headers(wav, {"X-Seed": str(seed)}))
+
+        return await run_in_threadpool(work)
 
     @app.get("/api/voices", response_model=VoiceList)
     def list_voices():
@@ -533,6 +623,73 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
             raise HTTPException(404, "voice not found")
         return voice
 
+    def find_mood(voice_id: str, mood_id: str):
+        voice = find_voice(voice_id)
+        mood = voice.mood(mood_id)
+        if mood is None:
+            raise HTTPException(404, "mood not found")
+        return voice, mood
+
+    @app.put("/api/voices/{voice_id}/moods/{mood_name}", response_model=VoiceOut)
+    async def put_mood(
+        voice_id: str,
+        mood_name: str,
+        file: UploadFile = File(...),
+        regions: str = Form("[]"),
+    ):
+        """Create a mood, or replace its clip. `regions` says which parts of which uploads the clip
+        was cut from (each region names its upload with `source`)."""
+        keep = parse_regions(regions, MOOD_REGIONS)
+        data, fname = normalize(await read_upload(file), file.filename or "")
+        try:
+            return store.set_mood(voice_id, mood_name, data, fname, regions=keep).public()
+        except VoiceNotFound as e:
+            raise HTTPException(404, str(e))
+        except VoiceError as e:
+            raise HTTPException(400, str(e))
+
+    @app.delete("/api/voices/{voice_id}/moods/{mood_name}", response_model=VoiceOut)
+    def delete_mood(voice_id: str, mood_name: str):
+        try:
+            return store.remove_mood(voice_id, mood_name).public()
+        except VoiceNotFound as e:
+            raise HTTPException(404, str(e))
+        except VoiceError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/voices/{voice_id}/moods/{mood_name}/audio")
+    def mood_audio(voice_id: str, mood_name: str):
+        return FileResponse(find_mood(voice_id, mood_name)[1].path)
+
+    @app.post("/api/voices/{voice_id}/sources", status_code=201, response_model=VoiceOut)
+    async def add_source(voice_id: str, file: UploadFile = File(...)):
+        """Keep another untrimmed upload with a voice, to cut more moods from."""
+        data = await read_upload(file)
+        try:
+            store.add_source(voice_id, data, file.filename or "")
+            return find_voice(voice_id).public()
+        except VoiceNotFound as e:
+            raise HTTPException(404, str(e))
+        except VoiceError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/voices/{voice_id}/sources/{source_id}/audio")
+    def source_audio(voice_id: str, source_id: str):
+        source = find_voice(voice_id).source(source_id)
+        if source is None:
+            raise HTTPException(404, "upload not found")
+        return FileResponse(source.path)
+
+    @app.delete("/api/voices/{voice_id}/sources/{source_id}", response_model=VoiceOut)
+    def delete_source(voice_id: str, source_id: str):
+        try:
+            store.remove_source(voice_id, source_id)
+            return find_voice(voice_id).public()
+        except VoiceNotFound as e:
+            raise HTTPException(404, str(e))
+        except VoiceError as e:
+            raise HTTPException(400, str(e))
+
     @app.get("/api/voices/{voice_id}/audio")
     def voice_audio(voice_id: str):
         return FileResponse(find_voice(voice_id).path)
@@ -566,6 +723,9 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         """Speak a fixed sentence in this voice. Cached until the clip, model, language,
         parameters or sentence change."""
         voice = find_voice(voice_id)
+        mood = voice.mood(req.mood) if req.mood else voice.neutral
+        if mood is None:
+            raise HTTPException(404, "mood not found")
         try:
             variant = resolve_variant(req.model, settings.default_variant)
             clean = clean_params(variant, req.params)
@@ -574,7 +734,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         language = req.language if VARIANTS[variant]["multilingual"] else ""
         key = hashlib.sha256(
             json.dumps(
-                [store.clip_digest(voice), variant, language, clean, settings.preview_text],
+                [store.clip_digest(mood), variant, language, clean, settings.preview_text],
                 sort_keys=True, default=str,
             ).encode()
         ).hexdigest()[:32]
@@ -583,7 +743,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
             cached_wav = cached.read_bytes()
             return Response(cached_wav, media_type="audio/wav", headers=duration_headers(cached_wav, {"X-Preview-Cached": "true"}))
         wav, _, _ = render(
-            variant, [(settings.preview_text, voice.id)], req.language, req.params, by_sentence=False
+            variant, [(settings.preview_text, f"{voice.id}:{mood.id}")], req.language, req.params, by_sentence=False
         )
         store.save_preview(voice, key, wav)
         return Response(wav, media_type="audio/wav", headers=duration_headers(wav, {"X-Preview-Cached": "false"}))

@@ -7,7 +7,7 @@ import json
 import logging
 from pathlib import Path
 
-from .db import Database, GenerationRow, VoiceRow
+from .db import Database, GenerationRow, VoiceMoodRow, VoiceRow, VoiceSourceRow
 from .generations import ID_RE
 from .voices import DEFAULT_KEY, HIDDEN_KEY
 
@@ -31,12 +31,19 @@ def import_legacy(db: Database, voices_root: Path, gens_root: Path) -> dict:
                 try:
                     meta = json.loads(meta_file.read_text())
                     if s.get(VoiceRow, folder.name) is None:
+                        created = meta["created"]
+                        updated = meta.get("updated") or created
+                        regions = list(meta.get("regions") or [])
+                        s.add(VoiceRow(id=folder.name, name=meta["name"], created=created, updated=updated))
+                        s.flush()
+                        original = meta.get("original") or ""
+                        if original:
+                            s.add(VoiceSourceRow(voice_id=folder.name, id="s1", filename=original, label="", created=created))
+                            regions = [r if r.get("source") else {"source": "s1", **r} for r in regions]
                         s.add(
-                            VoiceRow(
-                                id=folder.name,
-                                name=meta["name"],
-                                created=meta["created"],
-                                filename=meta["filename"],
+                            VoiceMoodRow(
+                                voice_id=folder.name, id="neutral", name="Neutral", filename=meta["filename"],
+                                regions=regions, created=created, updated=updated,
                             )
                         )
                         counts["voices"] += 1
