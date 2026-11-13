@@ -58,6 +58,7 @@ export interface paths {
          * Convert Voice
          * @description Re-speak a recording in a saved voice (or one of its moods). Timing, pacing and emphasis
          *     come from the recording; only the voice changes. The first call loads the conversion model.
+         *     `lead_in_ms` of silence is added once at the start, like /api/tts.
          */
         post: operations["convert_voice_api_convert_voice_post"];
         delete?: never;
@@ -545,6 +546,11 @@ export interface components {
              */
             file: string;
             /**
+             * Lead In Ms
+             * @default 150
+             */
+            lead_in_ms: number;
+            /**
              * Mood
              * @default
              */
@@ -828,6 +834,11 @@ export interface components {
              * @default en
              */
             language: string;
+            /**
+             * Lead In Ms
+             * @default 150
+             */
+            lead_in_ms: number;
             /** Model */
             model?: string | null;
             /**

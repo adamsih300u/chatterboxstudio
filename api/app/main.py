@@ -30,6 +30,8 @@ NO_VOICE = {"", "default", "none"}
 MAX_SEED = 2**32 - 1
 MAX_SEGMENTS = 50
 SENTENCE_GAP_MS = 150  # silence between sentences of one line when streaming
+# Silence at the start of a finished take, so players that wake up late don't clip the first word.
+DEFAULT_LEAD_IN_MS = 150
 MAX_REGIONS = 100
 
 
@@ -71,6 +73,8 @@ class TTSRequest(BaseModel):
     language: str = Field(default="en", min_length=2, max_length=16)
     params: dict[str, Any] = {}
     pause_ms: int = Field(default=300, ge=0, le=5000)
+    # Silence added once at the very start of the take (not per sentence or segment).
+    lead_in_ms: int = Field(default=DEFAULT_LEAD_IN_MS, ge=0, le=2000)
     save: bool = False
     # Same seed + text + voice + settings gives the same take. Omitted: a random one is picked
     # and returned in the X-Seed header (and stored with the History entry).
@@ -287,6 +291,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         seed: Optional[int] = None,
         by_sentence: bool = True,
         cancel: Optional[threading.Event] = None,
+        lead_in_ms: int = 0,
     ) -> tuple[bytes, str, list[dict]]:
         """Generate every segment, stitch them, and return (wav, variant, resolved segments).
 
@@ -315,7 +320,10 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
                 samples = cut_at_fraction(samples, rate, cut.keep)
             chunks.append(samples)
         overlaps = {i: c.overlap_ms for i, c in cuts.items() if c.overlap_ms}
-        wav = to_wav_bytes(stitch(chunks, rate, min(max(pause_ms, 0), 5000), set(cuts), overlaps), rate)
+        samples = stitch(chunks, rate, min(max(pause_ms, 0), 5000), set(cuts), overlaps)
+        if lead_in_ms > 0:
+            samples = np.concatenate([np.zeros(int(rate * min(lead_in_ms, 2000) / 1000), dtype=np.float32), samples])
+        wav = to_wav_bytes(samples, rate)
         return wav, variant, [{"text": i["text"], "voice": i["voice"]} for i in plan]
 
     @app.get("/api/health", response_model=Health)
@@ -360,7 +368,7 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         cancel = threading.Event()
 
         def work():
-            wav, variant, plan = render(req.model, segs, req.language, req.params, req.pause_ms, cuts, seed, cancel=cancel)
+            wav, variant, plan = render(req.model, segs, req.language, req.params, req.pause_ms, cuts, seed, cancel=cancel, lead_in_ms=req.lead_in_ms)
             headers = duration_headers(wav, {"X-Seed": str(seed)})
             if req.save:
                 if cancel.is_set():
@@ -422,6 +430,8 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
                     )
                     samples = np.asarray(samples, dtype=np.float32).reshape(-1)
                     gap_ms = pause if (pi == 0 and si > 0) else (SENTENCE_GAP_MS if pi > 0 else 0)
+                    if not kept:
+                        gap_ms = req.lead_in_ms  # first audio of the take: the lead-in, once
                     if gap_ms:
                         samples = np.concatenate([np.zeros(int(rate * gap_ms / 1000), dtype=np.float32), samples])
                     kept.append(samples)
@@ -491,9 +501,11 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         voice: str = Form("", max_length=64),
         mood: str = Form("", max_length=64),
         seed: Optional[int] = Form(None, ge=0, le=MAX_SEED),
+        lead_in_ms: int = Form(DEFAULT_LEAD_IN_MS, ge=0, le=2000),
     ):
         """Re-speak a recording in a saved voice (or one of its moods). Timing, pacing and emphasis
-        come from the recording; only the voice changes. The first call loads the conversion model."""
+        come from the recording; only the voice changes. The first call loads the conversion model.
+        `lead_in_ms` of silence is added once at the start, like /api/tts."""
         ref = None
         if voice.strip().lower() not in NO_VOICE:
             try:
@@ -522,7 +534,10 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
                     samples, rate = engine.convert(src, ref_path=ref, seed=seed)
                 except ValueError as e:
                     raise HTTPException(400, str(e))
-            wav = to_wav_bytes(np.asarray(samples, dtype=np.float32).reshape(-1), rate)
+            out = np.asarray(samples, dtype=np.float32).reshape(-1)
+            if lead_in_ms > 0:
+                out = np.concatenate([np.zeros(int(rate * lead_in_ms / 1000), dtype=np.float32), out])
+            wav = to_wav_bytes(out, rate)
             return Response(wav, media_type="audio/wav", headers=duration_headers(wav, {"X-Seed": str(seed)}))
 
         return await run_in_threadpool(work)

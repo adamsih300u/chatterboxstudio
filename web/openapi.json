@@ -108,6 +108,13 @@
             "title": "File",
             "type": "string"
           },
+          "lead_in_ms": {
+            "default": 150,
+            "maximum": 2000.0,
+            "minimum": 0.0,
+            "title": "Lead In Ms",
+            "type": "integer"
+          },
           "mood": {
             "default": "",
             "maxLength": 64,
@@ -822,6 +829,13 @@
             "title": "Language",
             "type": "string"
           },
+          "lead_in_ms": {
+            "default": 150,
+            "maximum": 2000.0,
+            "minimum": 0.0,
+            "title": "Lead In Ms",
+            "type": "integer"
+          },
           "model": {
             "anyOf": [
               {
@@ -1153,7 +1167,7 @@
     },
     "/api/convert-voice": {
       "post": {
-        "description": "Re-speak a recording in a saved voice (or one of its moods). Timing, pacing and emphasis\ncome from the recording; only the voice changes. The first call loads the conversion model.",
+        "description": "Re-speak a recording in a saved voice (or one of its moods). Timing, pacing and emphasis\ncome from the recording; only the voice changes. The first call loads the conversion model.\n`lead_in_ms` of silence is added once at the start, like /api/tts.",
         "operationId": "convert_voice_api_convert_voice_post",
         "requestBody": {
           "content": {

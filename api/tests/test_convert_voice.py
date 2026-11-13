@@ -41,6 +41,7 @@ def alice(client):
 
 
 def post(client, **data):
+    data.setdefault("lead_in_ms", "0")  # most tests assert exact durations
     return client.post("/api/convert-voice", data=data, files={"file": ("me.wav", wav(2.0), "audio/wav")})
 
 
@@ -53,6 +54,30 @@ def test_converts_into_a_saved_voice(client, engine, alice):
     call = engine.conversions[0]
     assert call["ref"].is_file()
     assert call["seed"] == 7
+
+
+def plain_client(engine, store, gen_store, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    return TestClient(create_app(engine=engine, store=store, gen_store=gen_store, static_dir=tmp_path / "no-ui"))
+
+
+def test_lead_in_defaults_to_150ms_and_is_silent(engine, store, gen_store, tmp_path):
+    client = plain_client(engine, store, gen_store, tmp_path)
+    files = {"file": ("me.wav", wav(2.0), "audio/wav")}
+    plain = client.post("/api/convert-voice", files=files)
+    none = client.post("/api/convert-voice", data={"lead_in_ms": "0"}, files=files)
+    assert float(plain.headers["x-audio-duration"]) == pytest.approx(0.2 + 0.15)
+    assert float(none.headers["x-audio-duration"]) == pytest.approx(0.2)
+    with wave.open(io.BytesIO(plain.content)) as w:
+        assert w.readframes(3600) == b"\x00\x00" * 3600
+
+
+def test_lead_in_is_range_checked(client):
+    assert post(client, lead_in_ms="5000").status_code == 422
+    assert post(client, lead_in_ms="-1").status_code == 422
 
 
 def test_mood_picks_that_moods_clip(client, engine, alice):

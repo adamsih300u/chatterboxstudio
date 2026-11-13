@@ -64,8 +64,21 @@ def gen_store(tmp_path):
     return GenerationStore(tmp_path / "generations")
 
 
+class NoLeadInClient(TestClient):
+    """Most tests assert exact sample counts, so /api/tts requests default to no lead-in here.
+
+    Tests of the lead-in itself pass `lead_in_ms` explicitly.
+    """
+
+    def post(self, url, *args, **kwargs):
+        body = kwargs.get("json")
+        if url.startswith("/api/tts") and isinstance(body, dict) and "lead_in_ms" not in body:
+            kwargs["json"] = {**body, "lead_in_ms": 0}
+        return super().post(url, *args, **kwargs)
+
+
 @pytest.fixture
 def client(engine, store, gen_store, tmp_path):
-    return TestClient(
+    return NoLeadInClient(
         create_app(engine=engine, store=store, gen_store=gen_store, static_dir=tmp_path / "no-ui")
     )
