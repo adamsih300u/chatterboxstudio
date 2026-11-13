@@ -2,16 +2,18 @@ import { useEffect, useState } from "react";
 import GenerateTab from "./GenerateTab";
 import type { Reuse } from "./GenerateTab";
 import type { ParamValues } from "./AdvancedParams";
+import ConvertTab from "./ConvertTab";
 import HistoryTab from "./HistoryTab";
 import VoicesTab from "./VoicesTab";
 import { errorMessage, getGenerations, getModels, getVoices, loadModel } from "./api";
 import type { GenerationOut, ModelInfo, VoiceOut } from "./api";
 
-type TabId = "generate" | "voices" | "history";
+type TabId = "generate" | "voices" | "convert" | "history";
 
 const TABS: [TabId, string][] = [
   ["generate", "Generate"],
   ["voices", "Voices"],
+  ["convert", "Convert"],
   ["history", "History"],
 ];
 
@@ -127,6 +129,7 @@ export default function App() {
         />
       </div>
       {tab === "voices" && <VoicesTab model={model} voices={voices} defaultVoice={defaultVoice} builtinHidden={builtinHidden} refreshVoices={refreshVoices} setError={setError} />}
+      {tab === "convert" && <ConvertTab voices={voices} defaultVoice={defaultVoice} builtinHidden={builtinHidden} setError={setError} />}
       {tab === "history" && (
         <HistoryTab generations={generations} refreshGenerations={refreshGenerations} setError={setError} onReuse={onReuse} />
       )}

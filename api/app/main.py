@@ -3,6 +3,7 @@ import hashlib
 import itertools
 import json
 import secrets
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -483,6 +484,48 @@ def create_app(engine=None, store=None, static_dir: Optional[Path] = None, gen_s
         except ConvertError as e:
             raise HTTPException(400, str(e))
         return Response(wav, media_type="audio/wav", headers=duration_headers(wav))
+
+    @app.post("/api/convert-voice")
+    async def convert_voice(
+        file: UploadFile = File(...),
+        voice: str = Form("", max_length=64),
+        mood: str = Form("", max_length=64),
+        seed: Optional[int] = Form(None, ge=0, le=MAX_SEED),
+    ):
+        """Re-speak a recording in a saved voice (or one of its moods). Timing, pacing and emphasis
+        come from the recording; only the voice changes. The first call loads the conversion model."""
+        ref = None
+        if voice.strip().lower() not in NO_VOICE:
+            try:
+                _, picked = resolve_spec(store, f"{voice}:{mood}" if mood.strip() else voice, None)
+            except VoiceNotFound as e:
+                raise HTTPException(404, str(e))
+            ref = picked.path
+        elif mood.strip():
+            raise HTTPException(400, "a mood needs a voice")
+        data = await read_upload(file)
+        limit = settings.max_convert_seconds
+        seed = seed if seed is not None else secrets.randbelow(MAX_SEED + 1)
+
+        def work():
+            try:
+                # Decode a little past the limit so an over-long recording is refused, not silently cut.
+                wav_in = decode(data, 0.0, limit + 1)
+            except ConvertError as e:
+                raise HTTPException(400, str(e))
+            if wav_duration(wav_in) > limit:
+                raise HTTPException(413, f"recording is longer than {limit:g} seconds")
+            with tempfile.TemporaryDirectory() as tmp:
+                src = Path(tmp) / "in.wav"
+                src.write_bytes(wav_in)
+                try:
+                    samples, rate = engine.convert(src, ref_path=ref, seed=seed)
+                except ValueError as e:
+                    raise HTTPException(400, str(e))
+            wav = to_wav_bytes(np.asarray(samples, dtype=np.float32).reshape(-1), rate)
+            return Response(wav, media_type="audio/wav", headers=duration_headers(wav, {"X-Seed": str(seed)}))
+
+        return await run_in_threadpool(work)
 
     @app.get("/api/voices", response_model=VoiceList)
     def list_voices():

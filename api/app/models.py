@@ -163,14 +163,28 @@ def _load_variant(variant: str, device: str) -> Any:
     raise ValueError(f"unknown variant '{variant}'")
 
 
+def _load_vc(device: str) -> Any:
+    # Upstream's voice conversion model: only the speech tokenizer and the decoder, no text model.
+    from chatterbox.vc import ChatterboxVC
+
+    return ChatterboxVC.from_pretrained(device=device)
+
+
 class ModelManager:
     def __init__(
         self,
         loader: Optional[Callable[[str, str], Any]] = None,
         device: str = "cpu",
         warmup: bool = False,
+        vc_loader: Optional[Callable[[str], Any]] = None,
     ):
         self._loader = loader or _load_variant
+        self._vc_loader = vc_loader or _load_vc
+        self._vc: Any = None
+        self._vc_default_ref: Any = None  # the built-in target voice, restored after a saved voice
+        self._vc_refs: OrderedDict[tuple, Any] = OrderedDict()
+        self._vc_refs_max = 16
+        self._vc_load_lock = threading.Lock()
         self._device = device
         self._warmup = warmup
         self._models: dict[str, Any] = {}
@@ -284,6 +298,50 @@ class ModelManager:
         else:
             self._cond_cache.move_to_end(key)
         model.conds = copy.copy(cached)  # generate() may swap .t3 for a new exaggeration
+
+    def get_vc(self) -> Any:
+        """The voice conversion model, loaded on first use (it is not one of the TTS variants)."""
+        with self._vc_load_lock:
+            if self._vc is None:
+                self._vc = self._vc_loader(self._device)
+                self._vc_default_ref = getattr(self._vc, "ref_dict", None)
+            return self._vc
+
+    def _select_vc_reference(self, vc: Any, ref_path: Optional[Path]) -> None:
+        """Point vc.ref_dict at the target voice. Caller holds the generation lock.
+
+        Upstream recomputes the reference embedding on every call that names a clip and leaves it
+        set afterwards. Here each clip is embedded once by upstream's set_target_voice() and cached,
+        and a call without a clip gets the built-in voice back.
+        """
+        if ref_path is None:
+            if self._vc_default_ref is None:
+                raise ValueError("the conversion model has no built-in voice; pick a saved voice")
+            vc.ref_dict = self._vc_default_ref
+            return
+        st = Path(ref_path).stat()
+        key = (str(ref_path), st.st_mtime_ns, st.st_size)
+        cached = self._vc_refs.get(key)
+        if cached is None:
+            vc.set_target_voice(str(ref_path))
+            cached = vc.ref_dict
+            self._vc_refs[key] = cached
+            while len(self._vc_refs) > self._vc_refs_max:
+                self._vc_refs.popitem(last=False)
+        else:
+            self._vc_refs.move_to_end(key)
+        vc.ref_dict = cached
+
+    def convert(self, audio_path: Path, ref_path: Optional[Path] = None, seed: Optional[int] = None) -> tuple[np.ndarray, int]:
+        """Re-speak the audio in the target voice, keeping its timing and delivery."""
+        vc = self.get_vc()
+        with self._gen_lock:
+            self._select_vc_reference(vc, ref_path)
+            if seed is not None:
+                _seed_torch(seed)
+            wav = vc.generate(str(audio_path))
+        samples = wav.squeeze().detach().cpu().numpy() if hasattr(wav, "detach") else np.asarray(wav)
+        return samples, int(vc.sr)
 
     def synthesize(
         self,

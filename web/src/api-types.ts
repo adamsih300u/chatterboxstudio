@@ -45,6 +45,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/convert-voice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert Voice
+         * @description Re-speak a recording in a saved voice (or one of its moods). Timing, pacing and emphasis
+         *     come from the recording; only the voice changes. The first call loads the conversion model.
+         */
+        post: operations["convert_voice_api_convert_voice_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/generations": {
         parameters: {
             query?: never;
@@ -516,6 +537,26 @@ export interface components {
              */
             file: string;
         };
+        /** Body_convert_voice_api_convert_voice_post */
+        Body_convert_voice_api_convert_voice_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /**
+             * Mood
+             * @default
+             */
+            mood: string;
+            /** Seed */
+            seed?: number | null;
+            /**
+             * Voice
+             * @default
+             */
+            voice: string;
+        };
         /** Body_decode_audio_api_audio_decode_post */
         Body_decode_audio_api_audio_decode_post: {
             /**
@@ -920,6 +961,39 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_convert_api_convert_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convert_voice_api_convert_voice_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_convert_voice_api_convert_voice_post"];
             };
         };
         responses: {

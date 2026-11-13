@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Uploads sent to /api/audio/decode, which may be whole audiobooks.
     max_decode_bytes: int = Field(300 * 1024 * 1024, gt=0)
     max_text_chars: int = Field(10_000, gt=0)
+    # Longest recording /api/convert-voice accepts. The pinned tokenizer sets no limit of its own,
+    # and long inputs have not been tried on the real model, so this is a cautious default.
+    max_convert_seconds: float = Field(40.0, gt=0, le=300)
     # Sentence spoken by the voice preview. Changing it re-renders every cached preview.
     preview_text: str = Field(
         "Hello, this is a quick sample of my voice. How does it sound to you?", min_length=1, max_length=500

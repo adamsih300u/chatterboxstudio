@@ -43,6 +43,11 @@ class StubEngine:
         )
         return np.zeros(2400, dtype=np.float32), 24000
 
+    def convert(self, audio_path, ref_path=None, seed=None):
+        self.conversions = getattr(self, "conversions", [])
+        self.conversions.append({"audio": audio_path, "ref": ref_path, "seed": seed})
+        return np.zeros(4800, dtype=np.float32), 24000
+
 
 @pytest.fixture
 def engine():

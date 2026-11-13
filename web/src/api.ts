@@ -171,6 +171,21 @@ export async function previewVoice(id: string, model?: string | null, mood?: str
   return { blob: await res.blob(), cached: res.headers.get("X-Preview-Cached") === "true", duration: headerSeconds(res) };
 }
 
+// Re-speak a recording in a saved voice (empty `voice` means the built-in one), optionally in one of its moods.
+export async function convertVoice(
+  recording: Blob,
+  voice: string,
+  mood: string
+): Promise<{ blob: Blob; duration: number | null; seed: number | null }> {
+  const body = new FormData();
+  body.append("file", recording, (recording as File).name || "recording");
+  body.append("voice", voice);
+  body.append("mood", mood);
+  const res = await check(await fetch("/api/convert-voice", { method: "POST", body }));
+  const seed = parseInt(res.headers.get("X-Seed") ?? "", 10);
+  return { blob: await res.blob(), duration: headerSeconds(res), seed: Number.isFinite(seed) ? seed : null };
+}
+
 export async function deleteVoice(id: string): Promise<void> {
   await check(await fetch(`/api/voices/${encodeURIComponent(id)}`, { method: "DELETE" }));
 }

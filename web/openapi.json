@@ -101,6 +101,45 @@
         "title": "Body_convert_api_convert_post",
         "type": "object"
       },
+      "Body_convert_voice_api_convert_voice_post": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          },
+          "mood": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Mood",
+            "type": "string"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 4294967295.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "voice": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Voice",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_convert_voice_api_convert_voice_post",
+        "type": "object"
+      },
       "Body_decode_audio_api_audio_decode_post": {
         "properties": {
           "file": {
@@ -1110,6 +1149,43 @@
           }
         },
         "summary": "Convert"
+      }
+    },
+    "/api/convert-voice": {
+      "post": {
+        "description": "Re-speak a recording in a saved voice (or one of its moods). Timing, pacing and emphasis\ncome from the recording; only the voice changes. The first call loads the conversion model.",
+        "operationId": "convert_voice_api_convert_voice_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_convert_voice_api_convert_voice_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convert Voice"
       }
     },
     "/api/generations": {
